@@ -45,19 +45,92 @@ if file:
 
     st.divider()
 
-    # Summary stats
-    st.subheader("📊 Summary Statistics")
-    st.dataframe(df.describe(), use_container_width=True)
+    # Summary stats — numeric
+    st.subheader("📊 Numeric Column Statistics")
+    numeric_df = df.select_dtypes(include="number")
+    if not numeric_df.empty:
+        st.dataframe(numeric_df.describe().T, use_container_width=True)
+    else:
+        st.info("No numeric columns found.")
 
     st.divider()
 
-    # Auto chart
-    st.subheader("📈 Quick Chart")
-    numeric_cols = df.select_dtypes("number").columns.tolist()
-
-    if numeric_cols:
-        col = st.selectbox("Pick a column to visualize", numeric_cols)
-        fig = px.histogram(df, x=col, title=f"Distribution of {col}")
+    # Numeric chart
+    st.subheader("📈 Numeric Distribution")
+    if not numeric_df.empty:
+        num_col = st.selectbox(
+            "Pick a numeric column to visualize",
+            numeric_df.columns.tolist(),
+            key="num_col"
+        )
+        fig = px.histogram(
+            df, x=num_col,
+            title=f"Distribution of {num_col}",
+            color_discrete_sequence=["#2ecc71"]
+        )
         st.plotly_chart(fig, use_container_width=True)
+
+    st.divider()
+
+    # Character/categorical columns
+    st.subheader("🔤 Character Field Distributions")
+    char_df = df.select_dtypes(include="object")
+
+    if not char_df.empty:
+
+        for col in char_df.columns:
+
+            st.markdown(f"#### `{col}`")
+
+            # Value counts table
+            counts = (
+                df[col]
+                .value_counts()
+                .reset_index()
+            )
+            counts.columns = [col, "Count"]
+            counts["Percentage %"] = (
+                counts["Count"] / counts["Count"].sum() * 100
+            ).round(2)
+
+            # Side by side — table and chart
+            left, right = st.columns([1, 2])
+
+            with left:
+                st.dataframe(
+                    counts.head(20),
+                    use_container_width=True,
+                    hide_index=True
+                )
+
+            with right:
+                # Only show top 20 for readability
+                plot_data = counts.head(20)
+                fig = px.bar(
+                    plot_data,
+                    x="Count",
+                    y=col,
+                    orientation="h",
+                    title=f"Top values in '{col}'",
+                    color="Count",
+                    color_continuous_scale=[
+                        "#1a7a3c", "#2ecc71"
+                    ],
+                    text="Percentage %"
+                )
+                fig.update_traces(
+                    texttemplate="%{text}%",
+                    textposition="outside"
+                )
+                fig.update_layout(
+                    showlegend=False,
+                    coloraxis_showscale=False,
+                    yaxis=dict(autorange="reversed"),
+                    margin=dict(l=10, r=40, t=40, b=20)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+
+            st.divider()
+
     else:
-        st.info("No numeric columns found for charting.")
+        st.info("No character/categorical columns found.")
