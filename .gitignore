@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+venv.nosync/
+.env
+
+# Streamlit secrets — NEVER commit this
+.streamlit/secrets.toml
+
+# Mac
+.DS_Store
+
+# iCloud
+*.icloud
