@@ -276,8 +276,11 @@ file = st.file_uploader(
     help="Supported: CSV, Excel (.xlsx, .xls)"
 )
 
-# ── Empty state when no file uploaded ─────────────────────────────────────────
+# ══════════════════════════════════════════════════════════════════════════════
+# if/else — NO st.stop() so footer always renders
+# ══════════════════════════════════════════════════════════════════════════════
 if not file:
+    # ── Empty state ────────────────────────────────────────────────────────────
     st.markdown("""
     <div class="upload-prompt">
         <h3>👆 Upload a file to get started</h3>
@@ -289,260 +292,252 @@ if not file:
         </p>
     </div>
     """, unsafe_allow_html=True)
-    st.stop()
 
-# ══════════════════════════════════════════════════════════════════════════════
-# DATA LOADED — everything below only runs after a file is uploaded
-# ══════════════════════════════════════════════════════════════════════════════
-if file.name.endswith(".csv"):
-    df = pd.read_csv(file)
 else:
-    df = pd.read_excel(file)
+    # ══════════════════════════════════════════════════════════════════════════
+    # DATA LOADED — runs only after file is uploaded
+    # ══════════════════════════════════════════════════════════════════════════
+    if file.name.endswith(".csv"):
+        df = pd.read_csv(file)
+    else:
+        df = pd.read_excel(file)
 
-numeric_df   = df.select_dtypes(include="number")
-char_df      = df.select_dtypes(include="object")
-numeric_cols = numeric_df.columns.tolist()
-char_cols    = char_df.columns.tolist()
+    numeric_df   = df.select_dtypes(include="number")
+    char_df      = df.select_dtypes(include="object")
+    numeric_cols = numeric_df.columns.tolist()
+    char_cols    = char_df.columns.tolist()
 
-# ── Overall Table Summary ──────────────────────────────────────────────────────
-section_header("Overall Table Summary")
+    # ── Overall Table Summary ──────────────────────────────────────────────────
+    section_header("Overall Table Summary")
+    m1, m2, m3, m4, m5 = st.columns(5)
+    m1.metric("Rows",             f"{df.shape[0]:,}")
+    m2.metric("Columns",          df.shape[1])
+    m3.metric("Numeric cols",     len(numeric_cols))
+    m4.metric("Categorical cols", len(char_cols))
+    m5.metric("Missing values",   f"{df.isnull().sum().sum():,}")
+    st.success(f"✅ **{file.name}** loaded successfully!")
 
-m1, m2, m3, m4, m5 = st.columns(5)
-m1.metric("Rows",             f"{df.shape[0]:,}")
-m2.metric("Columns",          df.shape[1])
-m3.metric("Numeric cols",     len(numeric_cols))
-m4.metric("Categorical cols", len(char_cols))
-m5.metric("Missing values",   f"{df.isnull().sum().sum():,}")
-st.success(f"✅ **{file.name}** loaded successfully!")
-
-# ── AI Executive Summary — DEFAULT VISIBLE ────────────────────────────────────
-section_header("🤖 AI Executive Summary")
-st.markdown(
-    "Claude reads your dataset profile and writes an executive summary, "
-    "analysis tables, and visual insights — tailored to your specific data."
-)
-
-if st.button("✨ Generate AI Summary", type="primary", use_container_width=True):
-    render_ai_summary(df)
-
-st.divider()
-
-# ── Data Preview ───────────────────────────────────────────────────────────────
-section_header("Data Preview")
-n_rows = st.slider(
-    "Rows to preview", 5, min(500, df.shape[0]), 50, step=5
-)
-
-# Horizontal + vertical scrollable HTML table
-preview_html = df.head(n_rows).to_html(index=False)
-st.markdown(
-    f'<div class="dataframe-container">{preview_html}</div>',
-    unsafe_allow_html=True
-)
-st.caption(
-    f"Showing {n_rows} of {df.shape[0]:,} rows × {df.shape[1]} columns"
-    f" — scroll right → to see all columns"
-)
-
-# ── Numeric Column Statistics ──────────────────────────────────────────────────
-section_header("Numeric Column Statistics")
-
-if not numeric_df.empty:
-    desc = numeric_df.describe().T
-    desc["median"] = numeric_df.median()
-    desc["mode"]   = numeric_df.mode().iloc[0]
-    desc["skew"]   = numeric_df.skew()
-    desc = desc[[
-        "count", "mean", "median", "mode",
-        "std", "min", "25%", "75%", "max", "skew"
-    ]]
-    desc.columns = [
-        "Count", "Mean", "Median", "Mode",
-        "Std Dev", "Min", "25%", "75%", "Max", "Skew"
-    ]
-    st.dataframe(desc.style.format("{:.2f}"), use_container_width=True)
-else:
-    st.info("No numeric columns found.")
-
-# ── Visual Insights Dashboard ──────────────────────────────────────────────────
-section_header("Visual Insights Dashboard")
-
-if not numeric_df.empty:
-
-    filtered_df = df.copy()
-
-    # Multiselect filters — one per categorical column, up to 4
-    if char_cols:
-        st.markdown("**🔽 Filter data by categorical fields:**")
-        filter_cols_ui = st.columns(min(len(char_cols), 4))
-        for i, cat_col in enumerate(char_cols[:4]):
-            with filter_cols_ui[i]:
-                options = sorted(df[cat_col].dropna().unique().tolist())
-                selected = st.multiselect(
-                    label=cat_col,
-                    options=options,
-                    default=options,
-                    key=f"filter_{cat_col}"
-                )
-                if selected:
-                    filtered_df = filtered_df[
-                        filtered_df[cat_col].isin(selected)
-                    ]
-        st.caption(
-            f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** rows "
-            f"after filters"
-        )
-
+    # ── AI Executive Summary ───────────────────────────────────────────────────
+    section_header("🤖 AI Executive Summary")
+    st.markdown(
+        "Claude reads your dataset profile and writes an executive summary, "
+        "analysis tables, and visual insights — tailored to your specific data."
+    )
+    if st.button("✨ Generate AI Summary", type="primary", use_container_width=True):
+        render_ai_summary(df)
     st.divider()
 
-    # Histograms grid — 2 per row
-    st.markdown("##### 📊 Distributions")
-    cols_per_row = 2
-    rows_needed  = -(-len(numeric_cols) // cols_per_row)
+    # ── Data Preview ───────────────────────────────────────────────────────────
+    section_header("Data Preview")
+    n_rows = st.slider("Rows to preview", 5, min(500, df.shape[0]), 50, step=5)
+    preview_html = df.head(n_rows).to_html(index=False)
+    st.markdown(
+        f'<div class="dataframe-container">{preview_html}</div>',
+        unsafe_allow_html=True
+    )
+    st.caption(
+        f"Showing {n_rows} of {df.shape[0]:,} rows × {df.shape[1]} columns"
+        f" — scroll right → to see all columns"
+    )
 
-    for row in range(rows_needed):
-        grid = st.columns(cols_per_row)
-        for col_idx in range(cols_per_row):
-            idx = row * cols_per_row + col_idx
-            if idx >= len(numeric_cols):
-                break
-            col_name = numeric_cols[idx]
-            with grid[col_idx]:
-                fig = px.histogram(
-                    filtered_df, x=col_name,
-                    title=col_name,
-                    color_discrete_sequence=[BLUE],
-                    nbins=30
-                )
-                fig.update_layout(
-                    bargap=0.15,
-                    height=280,
-                    margin=dict(l=10, r=10, t=40, b=20),
-                    showlegend=False
-                )
-                fig.add_vline(
-                    x=float(filtered_df[col_name].median()),
-                    line_dash="dash",
-                    line_color="#1a4a7a",
-                    annotation_text="Median",
-                    annotation_position="top right"
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    # ── Numeric Column Statistics ──────────────────────────────────────────────
+    section_header("Numeric Column Statistics")
+    if not numeric_df.empty:
+        desc = numeric_df.describe().T
+        desc["median"] = numeric_df.median()
+        desc["mode"]   = numeric_df.mode().iloc[0]
+        desc["skew"]   = numeric_df.skew()
+        desc = desc[[
+            "count", "mean", "median", "mode",
+            "std", "min", "25%", "75%", "max", "skew"
+        ]]
+        desc.columns = [
+            "Count", "Mean", "Median", "Mode",
+            "Std Dev", "Min", "25%", "75%", "Max", "Skew"
+        ]
+        st.dataframe(desc.style.format("{:.2f}"), use_container_width=True)
+    else:
+        st.info("No numeric columns found.")
 
-    st.divider()
+    # ── Visual Insights Dashboard ──────────────────────────────────────────────
+    section_header("Visual Insights Dashboard")
 
-    # Box plots grid — 2 per row
-    st.markdown("##### 📦 Box Plots")
-    for row in range(rows_needed):
-        grid = st.columns(cols_per_row)
-        for col_idx in range(cols_per_row):
-            idx = row * cols_per_row + col_idx
-            if idx >= len(numeric_cols):
-                break
-            col_name = numeric_cols[idx]
-            with grid[col_idx]:
-                fig = px.box(
-                    filtered_df, y=col_name,
-                    title=col_name,
-                    color_discrete_sequence=[BLUE],
-                    points="outliers"
-                )
-                fig.update_layout(
-                    height=280,
-                    margin=dict(l=10, r=10, t=40, b=20)
-                )
-                st.plotly_chart(fig, use_container_width=True)
+    if not numeric_df.empty:
+        filtered_df = df.copy()
 
-    st.divider()
-
-    # Correlation heatmap
-    if len(numeric_cols) >= 2:
-        st.markdown("##### 🔗 Correlations Between Numeric Variables")
-        corr = filtered_df[numeric_cols].corr().round(2)
-        fig_corr = px.imshow(
-            corr,
-            text_auto=True,
-            color_continuous_scale=["#ffffff", "#4a90d9", "#1a4a7a"],
-            zmin=-1, zmax=1,
-            title="Correlation Matrix"
-        )
-        fig_corr.update_layout(
-            height=420,
-            margin=dict(l=10, r=10, t=40, b=20)
-        )
-        st.plotly_chart(fig_corr, use_container_width=True)
-
-        st.markdown("**Notable correlations (|r| > 0.5):**")
-        found_any = False
-        for i in range(len(corr.columns)):
-            for j in range(i + 1, len(corr.columns)):
-                r = corr.iloc[i, j]
-                if abs(r) > 0.5:
-                    found_any = True
-                    direction = "positive" if r > 0 else "negative"
-                    strength  = "strong" if abs(r) > 0.75 else "moderate"
-                    st.markdown(
-                        f"- **{corr.columns[i]}** and **{corr.columns[j]}** "
-                        f"— {strength} {direction} correlation "
-                        f"(**r = {r:.2f}**)"
+        # Multiselect filters — one per categorical column up to 4
+        if char_cols:
+            st.markdown("**🔽 Filter data by categorical fields:**")
+            filter_cols_ui = st.columns(min(len(char_cols), 4))
+            for i, cat_col in enumerate(char_cols[:4]):
+                with filter_cols_ui[i]:
+                    options = sorted(df[cat_col].dropna().unique().tolist())
+                    selected = st.multiselect(
+                        label=cat_col,
+                        options=options,
+                        default=options,
+                        key=f"filter_{cat_col}"
                     )
-        if not found_any:
-            st.info(
-                "No strong correlations found between numeric variables (|r| > 0.5)."
+                    if selected:
+                        filtered_df = filtered_df[
+                            filtered_df[cat_col].isin(selected)
+                        ]
+            st.caption(
+                f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** "
+                f"rows after filters"
             )
 
-else:
-    st.info("No numeric columns available for Visual Insights.")
-
-# ── Distribution: Categorical Fields ──────────────────────────────────────────
-section_header("Distribution: Categorical Fields")
-
-if not char_df.empty:
-    for col in char_cols:
-        st.markdown(f"#### `{col}`")
-        counts = df[col].value_counts().reset_index()
-        counts.columns = [col, "Count"]
-        counts["Percentage %"] = (
-            counts["Count"] / counts["Count"].sum() * 100
-        ).round(2)
-
-        left, right = st.columns([1, 2])
-        with left:
-            st.dataframe(
-                counts.head(20),
-                use_container_width=True,
-                hide_index=True
-            )
-        with right:
-            plot_data = counts.head(20)
-            fig = px.bar(
-                plot_data,
-                x="Count",
-                y=col,
-                orientation="h",
-                title=f"Top values in '{col}'",
-                color="Count",
-                color_continuous_scale=BLUE_SCALE,
-                text="Percentage %"
-            )
-            fig.update_traces(
-                texttemplate="%{text}%",
-                textposition="outside"
-            )
-            fig.update_layout(
-                bargap=0.2,
-                showlegend=False,
-                coloraxis_showscale=False,
-                yaxis=dict(autorange="reversed"),
-                margin=dict(l=10, r=50, t=40, b=20),
-                height=max(320, len(plot_data) * 32)
-            )
-            st.plotly_chart(fig, use_container_width=True)
         st.divider()
-else:
-    st.info("No categorical columns found.")
 
-# ── Footer — outside all blocks, always renders at the very bottom ─────────────
+        # Histograms grid — 2 per row
+        st.markdown("##### 📊 Distributions")
+        cols_per_row = 2
+        rows_needed  = -(-len(numeric_cols) // cols_per_row)
+
+        for row in range(rows_needed):
+            grid = st.columns(cols_per_row)
+            for col_idx in range(cols_per_row):
+                idx = row * cols_per_row + col_idx
+                if idx >= len(numeric_cols):
+                    break
+                col_name = numeric_cols[idx]
+                with grid[col_idx]:
+                    fig = px.histogram(
+                        filtered_df, x=col_name,
+                        title=col_name,
+                        color_discrete_sequence=[BLUE],
+                        nbins=30
+                    )
+                    fig.update_layout(
+                        bargap=0.15,
+                        height=280,
+                        margin=dict(l=10, r=10, t=40, b=20),
+                        showlegend=False
+                    )
+                    fig.add_vline(
+                        x=float(filtered_df[col_name].median()),
+                        line_dash="dash",
+                        line_color="#1a4a7a",
+                        annotation_text="Median",
+                        annotation_position="top right"
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+
+        # Box plots grid — 2 per row
+        st.markdown("##### 📦 Box Plots")
+        for row in range(rows_needed):
+            grid = st.columns(cols_per_row)
+            for col_idx in range(cols_per_row):
+                idx = row * cols_per_row + col_idx
+                if idx >= len(numeric_cols):
+                    break
+                col_name = numeric_cols[idx]
+                with grid[col_idx]:
+                    fig = px.box(
+                        filtered_df, y=col_name,
+                        title=col_name,
+                        color_discrete_sequence=[BLUE],
+                        points="outliers"
+                    )
+                    fig.update_layout(
+                        height=280,
+                        margin=dict(l=10, r=10, t=40, b=20)
+                    )
+                    st.plotly_chart(fig, use_container_width=True)
+
+        st.divider()
+
+        # Correlation heatmap
+        if len(numeric_cols) >= 2:
+            st.markdown("##### 🔗 Correlations Between Numeric Variables")
+            corr = filtered_df[numeric_cols].corr().round(2)
+            fig_corr = px.imshow(
+                corr,
+                text_auto=True,
+                color_continuous_scale=["#ffffff", "#4a90d9", "#1a4a7a"],
+                zmin=-1, zmax=1,
+                title="Correlation Matrix"
+            )
+            fig_corr.update_layout(
+                height=420,
+                margin=dict(l=10, r=10, t=40, b=20)
+            )
+            st.plotly_chart(fig_corr, use_container_width=True)
+
+            st.markdown("**Notable correlations (|r| > 0.5):**")
+            found_any = False
+            for i in range(len(corr.columns)):
+                for j in range(i + 1, len(corr.columns)):
+                    r = corr.iloc[i, j]
+                    if abs(r) > 0.5:
+                        found_any = True
+                        direction = "positive" if r > 0 else "negative"
+                        strength  = "strong" if abs(r) > 0.75 else "moderate"
+                        st.markdown(
+                            f"- **{corr.columns[i]}** and "
+                            f"**{corr.columns[j]}** — "
+                            f"{strength} {direction} correlation "
+                            f"(**r = {r:.2f}**)"
+                        )
+            if not found_any:
+                st.info("No strong correlations found (|r| > 0.5).")
+
+    else:
+        st.info("No numeric columns available for Visual Insights.")
+
+    # ── Distribution: Categorical Fields ──────────────────────────────────────
+    section_header("Distribution: Categorical Fields")
+
+    if not char_df.empty:
+        for col in char_cols:
+            st.markdown(f"#### `{col}`")
+            counts = df[col].value_counts().reset_index()
+            counts.columns = [col, "Count"]
+            counts["Percentage %"] = (
+                counts["Count"] / counts["Count"].sum() * 100
+            ).round(2)
+
+            left, right = st.columns([1, 2])
+            with left:
+                st.dataframe(
+                    counts.head(20),
+                    use_container_width=True,
+                    hide_index=True
+                )
+            with right:
+                plot_data = counts.head(20)
+                fig = px.bar(
+                    plot_data,
+                    x="Count",
+                    y=col,
+                    orientation="h",
+                    title=f"Top values in '{col}'",
+                    color="Count",
+                    color_continuous_scale=BLUE_SCALE,
+                    text="Percentage %"
+                )
+                fig.update_traces(
+                    texttemplate="%{text}%",
+                    textposition="outside"
+                )
+                fig.update_layout(
+                    bargap=0.2,
+                    showlegend=False,
+                    coloraxis_showscale=False,
+                    yaxis=dict(autorange="reversed"),
+                    margin=dict(l=10, r=50, t=40, b=20),
+                    height=max(320, len(plot_data) * 32)
+                )
+                st.plotly_chart(fig, use_container_width=True)
+            st.divider()
+    else:
+        st.info("No categorical columns found.")
+
+# ══════════════════════════════════════════════════════════════════════════════
+# FOOTER — zero indentation, outside if/else, ALWAYS renders
+# ══════════════════════════════════════════════════════════════════════════════
 st.divider()
 st.markdown("""
 <div style="text-align: center; padding: 16px 0 8px 0;
