@@ -15,7 +15,6 @@ st.set_page_config(
 st.markdown("""
 <style>
 
-/* Section header banners */
 .section-header {
     background: linear-gradient(90deg, #1a4a7a 0%, #1a6aaa 100%);
     color: white;
@@ -27,7 +26,6 @@ st.markdown("""
     letter-spacing: 0.4px;
 }
 
-/* AI summary output box */
 .exec-box {
     background-color: #f0f7ff;
     border-left: 5px solid #1a6aaa;
@@ -39,7 +37,6 @@ st.markdown("""
     white-space: pre-wrap;
 }
 
-/* Hero banner at top of page */
 .hero-banner {
     background: linear-gradient(135deg, #0d2b4e 0%, #1a5a9a 100%);
     color: white;
@@ -69,7 +66,6 @@ st.markdown("""
     color: white;
 }
 
-/* Horizontal scrollable data table */
 .dataframe-container {
     overflow-x: auto;
     overflow-y: auto;
@@ -106,7 +102,6 @@ st.markdown("""
     background-color: #e0eeff;
 }
 
-/* Upload prompt box */
 .upload-prompt {
     border: 2px dashed #4a90d9;
     border-radius: 12px;
@@ -232,7 +227,7 @@ Dataset profile:
 {profile}
 """)
 
-    # Render Executive Summary
+    # Render results
     st.markdown("#### 📋 Executive Summary")
     st.markdown(
         f'<div class="exec-box">{exec_text}</div>',
@@ -240,12 +235,10 @@ Dataset profile:
     )
     st.divider()
 
-    # Render Analysis Tables
     st.markdown("#### 📊 Analysis Tables")
     st.markdown(tables_text)
     st.divider()
 
-    # Render Visual Insights
     st.markdown("#### 👁️ Visual Insights Narrative")
     st.markdown(visual_text)
 
@@ -376,9 +369,9 @@ section_header("Visual Insights Dashboard")
 
 if not numeric_df.empty:
 
-    # Categorical filters — multiselect with checkboxes, up to 4 filters
     filtered_df = df.copy()
 
+    # Multiselect filters — one per categorical column, up to 4
     if char_cols:
         st.markdown("**🔽 Filter data by categorical fields:**")
         filter_cols_ui = st.columns(min(len(char_cols), 4))
@@ -388,7 +381,7 @@ if not numeric_df.empty:
                 selected = st.multiselect(
                     label=cat_col,
                     options=options,
-                    default=options,        # all ticked by default
+                    default=options,
                     key=f"filter_{cat_col}"
                 )
                 if selected:
@@ -402,7 +395,7 @@ if not numeric_df.empty:
 
     st.divider()
 
-    # ── Histograms grid ────────────────────────────────────────────────────────
+    # Histograms grid — 2 per row
     st.markdown("##### 📊 Distributions")
     cols_per_row = 2
     rows_needed  = -(-len(numeric_cols) // cols_per_row)
@@ -438,7 +431,7 @@ if not numeric_df.empty:
 
     st.divider()
 
-    # ── Box plots grid ─────────────────────────────────────────────────────────
+    # Box plots grid — 2 per row
     st.markdown("##### 📦 Box Plots")
     for row in range(rows_needed):
         grid = st.columns(cols_per_row)
@@ -462,7 +455,7 @@ if not numeric_df.empty:
 
     st.divider()
 
-    # ── Correlation heatmap ────────────────────────────────────────────────────
+    # Correlation heatmap
     if len(numeric_cols) >= 2:
         st.markdown("##### 🔗 Correlations Between Numeric Variables")
         corr = filtered_df[numeric_cols].corr().round(2)
@@ -479,7 +472,6 @@ if not numeric_df.empty:
         )
         st.plotly_chart(fig_corr, use_container_width=True)
 
-        # Plain English correlation callouts
         st.markdown("**Notable correlations (|r| > 0.5):**")
         found_any = False
         for i in range(len(corr.columns)):
@@ -549,3 +541,16 @@ if not char_df.empty:
         st.divider()
 else:
     st.info("No categorical columns found.")
+
+# ── Footer — outside all blocks, always renders at the very bottom ─────────────
+st.divider()
+st.markdown("""
+<div style="text-align: center; padding: 16px 0 8px 0;
+            color: #888; font-size: 13px;">
+    © 2026 <strong>DataDart</strong> · Built with 🎯 by Sreena ·
+    Powered by <strong>Claude AI</strong> + <strong>Streamlit</strong><br>
+    <span style="font-size: 11px; opacity: 0.7;">
+    Your data never leaves your session · No data is stored or shared
+    </span>
+</div>
+""", unsafe_allow_html=True)
