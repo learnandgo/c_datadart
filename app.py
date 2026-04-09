@@ -95,12 +95,8 @@ st.markdown("""
     padding: 6px 14px;
     border-bottom: 1px solid #e8f0f8;
 }
-.dataframe-container tr:nth-child(even) {
-    background-color: #f5f9ff;
-}
-.dataframe-container tr:hover {
-    background-color: #e0eeff;
-}
+.dataframe-container tr:nth-child(even) { background-color: #f5f9ff; }
+.dataframe-container tr:hover { background-color: #e0eeff; }
 
 .upload-prompt {
     border: 2px dashed #4a90d9;
@@ -111,10 +107,30 @@ st.markdown("""
     background-color: #f8fbff;
     margin-top: 10px;
 }
-.upload-prompt h3 {
-    color: #1a4a7a;
-    font-size: 20px;
+.upload-prompt h3 { color: #1a4a7a; font-size: 20px; margin-bottom: 8px; }
+
+.filter-box {
+    border: 1px solid #c0d8f0;
+    border-radius: 8px;
+    padding: 10px 12px;
+    background: #f8fbff;
     margin-bottom: 8px;
+}
+.filter-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: #1a4a7a;
+    margin-bottom: 6px;
+}
+.text-summary-box {
+    background-color: #f0fff4;
+    border-left: 5px solid #2ecc71;
+    padding: 14px 18px;
+    border-radius: 6px;
+    font-size: 14px;
+    line-height: 1.7;
+    margin-top: 8px;
+    white-space: pre-wrap;
 }
 
 </style>
@@ -132,7 +148,6 @@ def section_header(title: str):
     )
 
 def build_profile_text(df: pd.DataFrame) -> str:
-    """Build compact data profile string to send to Claude."""
     numeric_df = df.select_dtypes(include="number")
     char_df    = df.select_dtypes(include="object")
     lines = []
@@ -145,18 +160,12 @@ def build_profile_text(df: pd.DataFrame) -> str:
     for col in char_df.columns[:8]:
         top = df[col].value_counts().head(5).to_dict()
         lines.append(f"  {col}: {top}")
-    lines.append(
-        f"\nMissing values per column:\n{df.isnull().sum().to_string()}"
-    )
+    lines.append(f"\nMissing values:\n{df.isnull().sum().to_string()}")
     return "\n".join(lines)
 
 def call_claude(prompt: str) -> str:
-    """Call Claude API — with friendly error if key is missing."""
     if "ANTHROPIC_API_KEY" not in st.secrets:
-        st.error(
-            "⚠️ Anthropic API key not found. "
-            "Please add ANTHROPIC_API_KEY to your Streamlit secrets."
-        )
+        st.error("⚠️ Anthropic API key not found. Add ANTHROPIC_API_KEY to Streamlit secrets.")
         st.stop()
     client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
     msg = client.messages.create(
@@ -167,9 +176,7 @@ def call_claude(prompt: str) -> str:
     return msg.content[0].text
 
 def render_ai_summary(df: pd.DataFrame):
-    """Run all three Claude calls and render results."""
     profile = build_profile_text(df)
-
     with st.spinner("Claude is reading your data..."):
         exec_text = call_claude(f"""
 You are a senior data analyst. Analyze this dataset profile and write:
@@ -177,7 +184,7 @@ You are a senior data analyst. Analyze this dataset profile and write:
 2. 6-8 key bullet point insights — be specific with real numbers from the data
 3. 2-3 watch-out flags or data quality observations
 
-Format exactly like this (keep the labels as headings):
+Format exactly like this:
 
 EXECUTIVE SUMMARY
 [your 2-3 sentence summary]
@@ -194,7 +201,6 @@ WATCH-OUTS
 Dataset profile:
 {profile}
 """)
-
     with st.spinner("Generating analysis tables..."):
         tables_text = call_claude(f"""
 You are a senior data analyst. Based on this dataset profile, generate
@@ -210,7 +216,6 @@ Generate exactly 3 tables with clear bold titles.
 Dataset profile:
 {profile}
 """)
-
     with st.spinner("Writing visual insights narrative..."):
         visual_text = call_claude(f"""
 You are a senior data analyst writing a visual insights report section.
@@ -226,25 +231,119 @@ Be specific — use actual column names and numbers from the profile.
 Dataset profile:
 {profile}
 """)
-
-    # Render results
     st.markdown("#### 📋 Executive Summary")
-    st.markdown(
-        f'<div class="exec-box">{exec_text}</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(f'<div class="exec-box">{exec_text}</div>', unsafe_allow_html=True)
     st.divider()
-
     st.markdown("#### 📊 Analysis Tables")
     st.markdown(tables_text)
     st.divider()
-
     st.markdown("#### 👁️ Visual Insights Narrative")
     st.markdown(visual_text)
 
+def render_categorical_filter(df: pd.DataFrame, char_cols: list) -> pd.DataFrame:
+    """
+    Render searchable checkbox filter per categorical column.
+    Returns filtered DataFrame.
+    """
+    filtered_df = df.copy()
+
+    if not char_cols:
+        return filtered_df
+
+    st.markdown("**🔽 Filter data by categorical fields:**")
+
+    # Show up to 4 filters side by side
+    cols_to_show = char_cols[:4]
+    filter_cols  = st.columns(len(cols_to_show))
+
+    for i, cat_col in enumerate(cols_to_show):
+        with filter_cols[i]:
+            all_options = sorted(df[cat_col].dropna().unique().tolist())
+
+            st.markdown(f'<div class="filter-title">{cat_col}</div>',
+                        unsafe_allow_html=True)
+
+            # Search box
+            search_key = f"search_{cat_col}"
+            search     = st.text_input(
+                "Search",
+                key=search_key,
+                placeholder="Type to search...",
+                label_visibility="collapsed"
+            )
+
+            # Filter options by search
+            filtered_options = [
+                o for o in all_options
+                if search.lower() in str(o).lower()
+            ] if search else all_options
+
+            # All / None buttons
+            btn1, btn2 = st.columns(2)
+            select_all  = btn1.button("All",  key=f"all_{cat_col}",  use_container_width=True)
+            select_none = btn2.button("None", key=f"none_{cat_col}", use_container_width=True)
+
+            # Session state for checked values
+            state_key = f"checked_{cat_col}"
+            if state_key not in st.session_state:
+                st.session_state[state_key] = set(all_options)
+
+            if select_all:
+                st.session_state[state_key] = set(all_options)
+            if select_none:
+                st.session_state[state_key] = set()
+
+            # Scrollable checkbox list
+            checkbox_container = st.container(height=220)
+            with checkbox_container:
+                for option in filtered_options:
+                    checked = option in st.session_state[state_key]
+                    new_val = st.checkbox(
+                        str(option),
+                        value=checked,
+                        key=f"chk_{cat_col}_{option}"
+                    )
+                    if new_val:
+                        st.session_state[state_key].add(option)
+                    else:
+                        st.session_state[state_key].discard(option)
+
+            # Apply filter
+            selected = st.session_state[state_key]
+            if selected:
+                filtered_df = filtered_df[filtered_df[cat_col].isin(selected)]
+
+    st.caption(
+        f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** rows after filters"
+    )
+    return filtered_df
+
+def summarize_categorical_field(col: str, values: list, counts: dict) -> str:
+    """Ask Claude to write a plain English summary of a categorical field."""
+    top_values_str = "\n".join(
+        [f"  {v}: {c} occurrences" for v, c in list(counts.items())[:15]]
+    )
+    return call_claude(f"""
+You are a data analyst. Summarize what this categorical field contains
+in 2-4 sentences of plain English. Be specific and insightful.
+
+Consider:
+- What does this field represent?
+- What are the dominant values and what do they tell us?
+- Is there notable concentration or spread?
+- Any interesting patterns?
+
+Field name: {col}
+Total unique values: {len(values)}
+Top values by frequency:
+{top_values_str}
+
+Write only the summary — no preamble, no headers.
+""")
+
 
 # ══════════════════════════════════════════════════════════════════════════════
-# HERO BANNER — always visible at top
+# HERO BANNER
 # ══════════════════════════════════════════════════════════════════════════════
 st.markdown("""
 <div class="hero-banner">
@@ -260,7 +359,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# ── How it works strip ─────────────────────────────────────────────────────────
 c1, c2, c3, c4 = st.columns(4)
 c1.info("**Step 1** 📁\nUpload CSV or Excel file")
 c2.info("**Step 2** 📊\nAuto stats + charts generated")
@@ -277,10 +375,9 @@ file = st.file_uploader(
 )
 
 # ══════════════════════════════════════════════════════════════════════════════
-# if/else — NO st.stop() so footer always renders
+# MAIN CONTENT — if/else so footer always renders
 # ══════════════════════════════════════════════════════════════════════════════
 if not file:
-    # ── Empty state ────────────────────────────────────────────────────────────
     st.markdown("""
     <div class="upload-prompt">
         <h3>👆 Upload a file to get started</h3>
@@ -294,9 +391,7 @@ if not file:
     """, unsafe_allow_html=True)
 
 else:
-    # ══════════════════════════════════════════════════════════════════════════
-    # DATA LOADED — runs only after file is uploaded
-    # ══════════════════════════════════════════════════════════════════════════
+    # Load data
     if file.name.endswith(".csv"):
         df = pd.read_csv(file)
     else:
@@ -347,14 +442,8 @@ else:
         desc["median"] = numeric_df.median()
         desc["mode"]   = numeric_df.mode().iloc[0]
         desc["skew"]   = numeric_df.skew()
-        desc = desc[[
-            "count", "mean", "median", "mode",
-            "std", "min", "25%", "75%", "max", "skew"
-        ]]
-        desc.columns = [
-            "Count", "Mean", "Median", "Mode",
-            "Std Dev", "Min", "25%", "75%", "Max", "Skew"
-        ]
+        desc = desc[["count","mean","median","mode","std","min","25%","75%","max","skew"]]
+        desc.columns   = ["Count","Mean","Median","Mode","Std Dev","Min","25%","75%","Max","Skew"]
         st.dataframe(desc.style.format("{:.2f}"), use_container_width=True)
     else:
         st.info("No numeric columns found.")
@@ -363,33 +452,12 @@ else:
     section_header("Visual Insights Dashboard")
 
     if not numeric_df.empty:
-        filtered_df = df.copy()
 
-        # Multiselect filters — one per categorical column up to 4
-        if char_cols:
-            st.markdown("**🔽 Filter data by categorical fields:**")
-            filter_cols_ui = st.columns(min(len(char_cols), 4))
-            for i, cat_col in enumerate(char_cols[:4]):
-                with filter_cols_ui[i]:
-                    options = sorted(df[cat_col].dropna().unique().tolist())
-                    selected = st.multiselect(
-                        label=cat_col,
-                        options=options,
-                        default=options,
-                        key=f"filter_{cat_col}"
-                    )
-                    if selected:
-                        filtered_df = filtered_df[
-                            filtered_df[cat_col].isin(selected)
-                        ]
-            st.caption(
-                f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** "
-                f"rows after filters"
-            )
-
+        # Searchable checkbox filter
+        filtered_df = render_categorical_filter(df, char_cols)
         st.divider()
 
-        # Histograms grid — 2 per row
+        # Histograms grid
         st.markdown("##### 📊 Distributions")
         cols_per_row = 2
         rows_needed  = -(-len(numeric_cols) // cols_per_row)
@@ -403,21 +471,17 @@ else:
                 col_name = numeric_cols[idx]
                 with grid[col_idx]:
                     fig = px.histogram(
-                        filtered_df, x=col_name,
-                        title=col_name,
-                        color_discrete_sequence=[BLUE],
-                        nbins=30
+                        filtered_df, x=col_name, title=col_name,
+                        color_discrete_sequence=[BLUE], nbins=30
                     )
                     fig.update_layout(
-                        bargap=0.15,
-                        height=280,
-                        margin=dict(l=10, r=10, t=40, b=20),
+                        bargap=0.15, height=280,
+                        margin=dict(l=10,r=10,t=40,b=20),
                         showlegend=False
                     )
                     fig.add_vline(
                         x=float(filtered_df[col_name].median()),
-                        line_dash="dash",
-                        line_color="#1a4a7a",
+                        line_dash="dash", line_color="#1a4a7a",
                         annotation_text="Median",
                         annotation_position="top right"
                     )
@@ -425,7 +489,7 @@ else:
 
         st.divider()
 
-        # Box plots grid — 2 per row
+        # Box plots grid
         st.markdown("##### 📦 Box Plots")
         for row in range(rows_needed):
             grid = st.columns(cols_per_row)
@@ -436,15 +500,10 @@ else:
                 col_name = numeric_cols[idx]
                 with grid[col_idx]:
                     fig = px.box(
-                        filtered_df, y=col_name,
-                        title=col_name,
-                        color_discrete_sequence=[BLUE],
-                        points="outliers"
+                        filtered_df, y=col_name, title=col_name,
+                        color_discrete_sequence=[BLUE], points="outliers"
                     )
-                    fig.update_layout(
-                        height=280,
-                        margin=dict(l=10, r=10, t=40, b=20)
-                    )
+                    fig.update_layout(height=280, margin=dict(l=10,r=10,t=40,b=20))
                     st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
@@ -454,36 +513,28 @@ else:
             st.markdown("##### 🔗 Correlations Between Numeric Variables")
             corr = filtered_df[numeric_cols].corr().round(2)
             fig_corr = px.imshow(
-                corr,
-                text_auto=True,
-                color_continuous_scale=["#ffffff", "#4a90d9", "#1a4a7a"],
-                zmin=-1, zmax=1,
-                title="Correlation Matrix"
+                corr, text_auto=True,
+                color_continuous_scale=["#ffffff","#4a90d9","#1a4a7a"],
+                zmin=-1, zmax=1, title="Correlation Matrix"
             )
-            fig_corr.update_layout(
-                height=420,
-                margin=dict(l=10, r=10, t=40, b=20)
-            )
+            fig_corr.update_layout(height=420, margin=dict(l=10,r=10,t=40,b=20))
             st.plotly_chart(fig_corr, use_container_width=True)
 
             st.markdown("**Notable correlations (|r| > 0.5):**")
             found_any = False
             for i in range(len(corr.columns)):
-                for j in range(i + 1, len(corr.columns)):
+                for j in range(i+1, len(corr.columns)):
                     r = corr.iloc[i, j]
                     if abs(r) > 0.5:
                         found_any = True
                         direction = "positive" if r > 0 else "negative"
                         strength  = "strong" if abs(r) > 0.75 else "moderate"
                         st.markdown(
-                            f"- **{corr.columns[i]}** and "
-                            f"**{corr.columns[j]}** — "
-                            f"{strength} {direction} correlation "
-                            f"(**r = {r:.2f}**)"
+                            f"- **{corr.columns[i]}** and **{corr.columns[j]}** "
+                            f"— {strength} {direction} correlation (**r = {r:.2f}**)"
                         )
             if not found_any:
                 st.info("No strong correlations found (|r| > 0.5).")
-
     else:
         st.info("No numeric columns available for Visual Insights.")
 
@@ -493,12 +544,16 @@ else:
     if not char_df.empty:
         for col in char_cols:
             st.markdown(f"#### `{col}`")
-            counts = df[col].value_counts().reset_index()
+
+            counts     = df[col].value_counts().reset_index()
             counts.columns = [col, "Count"]
             counts["Percentage %"] = (
                 counts["Count"] / counts["Count"].sum() * 100
             ).round(2)
+            all_values = df[col].dropna().unique().tolist()
+            counts_dict = df[col].value_counts().to_dict()
 
+            # Table + bar chart side by side
             left, right = st.columns([1, 2])
             with left:
                 st.dataframe(
@@ -509,40 +564,48 @@ else:
             with right:
                 plot_data = counts.head(20)
                 fig = px.bar(
-                    plot_data,
-                    x="Count",
-                    y=col,
-                    orientation="h",
+                    plot_data, x="Count", y=col, orientation="h",
                     title=f"Top values in '{col}'",
-                    color="Count",
-                    color_continuous_scale=BLUE_SCALE,
+                    color="Count", color_continuous_scale=BLUE_SCALE,
                     text="Percentage %"
                 )
                 fig.update_traces(
-                    texttemplate="%{text}%",
-                    textposition="outside"
+                    texttemplate="%{text}%", textposition="outside"
                 )
                 fig.update_layout(
-                    bargap=0.2,
-                    showlegend=False,
+                    bargap=0.2, showlegend=False,
                     coloraxis_showscale=False,
                     yaxis=dict(autorange="reversed"),
-                    margin=dict(l=10, r=50, t=40, b=20),
+                    margin=dict(l=10,r=50,t=40,b=20),
                     height=max(320, len(plot_data) * 32)
                 )
                 st.plotly_chart(fig, use_container_width=True)
+
+            # AI textual summary for this field
+            with st.expander(f"🤖 AI Summary of `{col}` field", expanded=False):
+                if st.button(
+                    f"Summarize `{col}` field",
+                    key=f"summarize_{col}"
+                ):
+                    with st.spinner(f"Claude is analyzing `{col}`..."):
+                        summary = summarize_categorical_field(
+                            col, all_values, counts_dict
+                        )
+                    st.markdown(
+                        f'<div class="text-summary-box">{summary}</div>',
+                        unsafe_allow_html=True
+                    )
+
             st.divider()
     else:
         st.info("No categorical columns found.")
 
-# ══════════════════════════════════════════════════════════════════════════════
-# FOOTER — zero indentation, outside if/else, ALWAYS renders
-# ══════════════════════════════════════════════════════════════════════════════
+# ── Footer — zero indentation, always renders ──────────────────────────────────
 st.divider()
 st.markdown("""
 <div style="text-align: center; padding: 16px 0 8px 0;
             color: #888; font-size: 13px;">
-    © 2026 <strong>DataDart</strong> · — All rights reserved  ·
+    © 2026 <strong>DataDart</strong> · Built with 🎯 by Sreena ·
     Powered by <strong>Claude AI</strong> + <strong>Streamlit</strong><br>
     <span style="font-size: 11px; opacity: 0.7;">
     Your data never leaves your session · No data is stored or shared
