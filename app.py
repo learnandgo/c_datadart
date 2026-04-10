@@ -741,7 +741,7 @@ st.divider()
 st.markdown("""
 <div style="text-align: center; padding: 16px 0 8px 0;
             color: #888; font-size: 13px;">
-    © 2026 <strong>DataDart</strong> · Built with 🎯 by Sreena ·
+    © 2026 <strong>DataDart</strong> · 🎯 Datadart — All rights reserved. ·
     Powered by <strong>Claude AI</strong> + <strong>Streamlit</strong><br>
     <span style="font-size: 11px; opacity: 0.7;">
     Your data never leaves your session · No data is stored or shared
