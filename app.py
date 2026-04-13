@@ -128,7 +128,6 @@ st.markdown("""
     white-space: pre-wrap;
 }
 
-/* Sentiment color boxes */
 .sentiment-positive {
     background-color: #f0fff4;
     border-left: 6px solid #27ae60;
@@ -195,8 +194,6 @@ st.markdown("""
     line-height: 1.8;
     margin: 8px 0;
 }
-
-/* AI Summary CTA button area */
 .ai-cta-box {
     background: linear-gradient(135deg, #1a4a7a 0%, #2980b9 100%);
     border-radius: 12px;
@@ -204,16 +201,9 @@ st.markdown("""
     margin: 12px 0 20px 0;
     text-align: center;
 }
-.ai-cta-box h3 {
-    color: white;
-    font-size: 20px;
-    margin: 0 0 8px 0;
-}
-.ai-cta-box p {
-    color: rgba(255,255,255,0.85);
-    font-size: 14px;
-    margin: 0 0 16px 0;
-}
+.ai-cta-box h3 { color: white; font-size: 20px; margin: 0 0 8px 0; }
+.ai-cta-box p  { color: rgba(255,255,255,0.85); font-size: 14px; margin: 0 0 16px 0; }
+
 .sentiment-badge {
     display: inline-block;
     padding: 4px 14px;
@@ -222,10 +212,10 @@ st.markdown("""
     font-weight: 600;
     margin-bottom: 10px;
 }
-.badge-positive  { background: #d5f5e3; color: #1e8449; }
-.badge-negative  { background: #fadbd8; color: #922b21; }
-.badge-neutral   { background: #e8e8e8; color: #555; }
-.badge-mixed     { background: #fef9e7; color: #b7770d; }
+.badge-positive { background: #d5f5e3; color: #1e8449; }
+.badge-negative { background: #fadbd8; color: #922b21; }
+.badge-neutral  { background: #e8e8e8; color: #555; }
+.badge-mixed    { background: #fef9e7; color: #b7770d; }
 
 </style>
 """, unsafe_allow_html=True)
@@ -275,7 +265,7 @@ def render_ai_summary(df: pd.DataFrame):
         exec_text = call_claude(f"""
 You are a senior data analyst. Analyze this dataset profile and write:
 1. A 2-3 sentence executive summary of what this dataset contains
-2. 6-8 key bullet point insights — be specific with real numbers from the data
+2. 6-8 key bullet point insights with specific numbers from the data
 3. 2-3 watch-out flags or data quality observations
 
 Format exactly like this:
@@ -284,48 +274,36 @@ EXECUTIVE SUMMARY
 [your 2-3 sentence summary]
 
 KEY INSIGHTS
-• [insight with specific numbers]
-• [insight with specific numbers]
-(continue for all insights)
+[bullet insights]
 
 WATCH-OUTS
-• [flag or data quality note]
-• [flag or data quality note]
+[bullet flags]
 
 Dataset profile:
 {profile}
 """)
     with st.spinner("Generating analysis tables..."):
         tables_text = call_claude(f"""
-You are a senior data analyst. Based on this dataset profile, generate
-3 meaningful analysis tables. For each:
-- Pick the most relevant grouping from the categorical columns
-- Aggregate the most important numeric columns
-- Show top 5-6 rows only
-- Format as a proper markdown table with aligned columns
-- Add a short 1-line insight below each table
-
-Generate exactly 3 tables with clear bold titles.
+You are a senior data analyst. Generate 3 meaningful analysis tables.
+For each: pick a relevant categorical grouping, aggregate key numeric columns,
+show top 5-6 rows, format as markdown table, add a 1-line insight below.
+Use clear bold titles.
 
 Dataset profile:
 {profile}
 """)
     with st.spinner("Writing visual insights narrative..."):
         visual_text = call_claude(f"""
-You are a senior data analyst writing a visual insights report section.
-Cover these four areas with clear headers and bullet points:
-
-1. KEY DISTRIBUTIONS — what stands out in the numeric distributions?
-2. RELATIONSHIPS & TRENDS — what correlations or patterns are notable?
-3. RECOMMENDED VISUALIZATIONS — what charts would reveal the most insight and why?
-4. ANOMALIES & OUTLIERS — anything unusual worth investigating?
-
-Be specific — use actual column names and numbers from the profile.
+You are a senior data analyst. Cover these four areas with headers and bullets:
+1. KEY DISTRIBUTIONS
+2. RELATIONSHIPS AND TRENDS
+3. RECOMMENDED VISUALIZATIONS
+4. ANOMALIES AND OUTLIERS
+Be specific with column names and numbers.
 
 Dataset profile:
 {profile}
 """)
-
     st.markdown("#### 📋 Executive Summary")
     st.markdown(f'<div class="exec-box">{exec_text}</div>', unsafe_allow_html=True)
     st.divider()
@@ -392,56 +370,41 @@ def summarize_categorical_field(col: str, all_values: list, counts_dict: dict) -
         [f"  {v}: {c} occurrences" for v, c in list(counts_dict.items())[:15]]
     )
     return call_claude(f"""
-You are a data analyst. Summarize what this categorical field contains
-in 2-4 sentences of plain English. Be specific and insightful.
-
-Consider:
-- What does this field represent?
-- What are the dominant values and what do they tell us?
-- Is there notable concentration or spread?
-- Any interesting patterns?
+You are a data analyst. Summarize this categorical field in 2-4 plain English sentences.
+Cover: what the field represents, dominant values, concentration or spread, interesting patterns.
 
 Field name: {col}
 Total unique values: {len(all_values)}
 Top values by frequency:
 {top_values_str}
 
-Write only the summary — no preamble, no headers.
+Write only the summary, no preamble or headers.
 """)
 
 def analyze_long_text_sentiment(col: str, sample_values: list) -> dict:
-    """
-    Returns structured sentiment analysis as a dict with keys:
-    sentiment, sentiment_summary, themes, issues, improvements
-    """
-    samples_str = "\n".join(
-        [f"  - {str(v)[:300]}" for v in sample_values[:30]]
-    )
+    samples_str = "\n".join([f"  - {str(v)[:300]}" for v in sample_values[:30]])
     raw = call_claude(f"""
 You are a data analyst specializing in text analysis and sentiment.
-Analyze these sample values from a free-text field.
+Analyze these sample values and return ONLY a valid JSON object with exactly these keys:
 
-Return ONLY a valid JSON object with exactly these keys:
 {{
-  "sentiment": "positive" | "negative" | "neutral" | "mixed",
-  "sentiment_summary": "2-3 sentences describing the overall tone and feeling",
-  "themes": "2-3 sentences describing the key topics and themes that appear",
-  "issues": "2-3 sentences describing problems, complaints, or concerns raised. Write 'None identified' if none.",
-  "improvements": "2-3 sentences describing suggestions or areas for improvement mentioned. Write 'None identified' if none."
+  "sentiment": "positive or negative or neutral or mixed",
+  "sentiment_summary": "2-3 sentences describing the overall tone",
+  "themes": "2-3 sentences describing key topics and themes",
+  "issues": "2-3 sentences describing problems or complaints. Write None identified if none.",
+  "improvements": "2-3 sentences describing improvement suggestions. Write None identified if none."
 }}
 
 Field name: {col}
 Sample values:
 {samples_str}
 
-Return ONLY the JSON. No preamble, no markdown, no explanation.
+Return ONLY the JSON. No markdown, no explanation.
 """)
     try:
-        # Strip any accidental markdown fences
-        clean = raw.strip().replace("```json","").replace("```","").strip()
+        clean = raw.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(clean)
     except Exception:
-        # Fallback if JSON parsing fails
         return {
             "sentiment": "mixed",
             "sentiment_summary": raw[:300],
@@ -451,10 +414,7 @@ Return ONLY the JSON. No preamble, no markdown, no explanation.
         }
 
 def render_sentiment_result(result: dict):
-    """Render color-coded sentiment analysis result."""
     sentiment = result.get("sentiment", "neutral").lower()
-
-    # Badge color map
     badge_map = {
         "positive": ("badge-positive", "✅ Positive"),
         "negative": ("badge-negative", "❌ Negative"),
@@ -470,36 +430,33 @@ def render_sentiment_result(result: dict):
     badge_class, badge_label = badge_map.get(sentiment, ("badge-neutral", "➖ Neutral"))
     box_class = box_map.get(sentiment, "sentiment-neutral")
 
-    # Overall sentiment badge + summary
     st.markdown(
         f'<span class="sentiment-badge {badge_class}">{badge_label} Sentiment</span>',
         unsafe_allow_html=True
     )
     st.markdown(
-        f'<div class="{box_class}"><strong>Overall Sentiment</strong><br>{result.get("sentiment_summary","")}</div>',
+        f'<div class="{box_class}"><strong>Overall Sentiment</strong><br>'
+        f'{result.get("sentiment_summary","")}</div>',
         unsafe_allow_html=True
     )
-
-    # Themes — blue
     if result.get("themes"):
         st.markdown(
-            f'<div class="themes-box"><strong>🔵 Key Themes</strong><br>{result.get("themes","")}</div>',
+            f'<div class="themes-box"><strong>🔵 Key Themes</strong><br>'
+            f'{result.get("themes","")}</div>',
             unsafe_allow_html=True
         )
-
-    # Issues — red
     issues = result.get("issues", "None identified")
     if issues and issues.strip().lower() != "none identified":
         st.markdown(
-            f'<div class="issues-box"><strong>🔴 Issues & Complaints</strong><br>{issues}</div>',
+            f'<div class="issues-box"><strong>🔴 Issues and Complaints</strong><br>'
+            f'{issues}</div>',
             unsafe_allow_html=True
         )
-
-    # Improvements — orange
     improvements = result.get("improvements", "None identified")
     if improvements and improvements.strip().lower() != "none identified":
         st.markdown(
-            f'<div class="improvements-box"><strong>🟠 Improvement Suggestions</strong><br>{improvements}</div>',
+            f'<div class="improvements-box"><strong>🟠 Improvement Suggestions</strong><br>'
+            f'{improvements}</div>',
             unsafe_allow_html=True
         )
 
@@ -585,7 +542,6 @@ else:
 
     # ── AI Executive Summary — prominent CTA ──────────────────────────────────
     section_header("🤖 AI Executive Summary")
-
     st.markdown("""
     <div class="ai-cta-box">
         <h3>🤖 Let Claude Analyze Your Data</h3>
@@ -596,14 +552,8 @@ else:
 
     col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
     with col_btn2:
-        generate_clicked = st.button(
-            "✨ Generate AI Summary",
-            type="primary",
-            use_container_width=True
-        )
-
-    if generate_clicked:
-        render_ai_summary(df)
+        if st.button("✨ Generate AI Summary", type="primary", use_container_width=True):
+            render_ai_summary(df)
 
     st.divider()
 
@@ -617,7 +567,7 @@ else:
     )
     st.caption(
         f"Showing {n_rows} of {df.shape[0]:,} rows × {df.shape[1]} columns"
-        f" — scroll right → to see all columns"
+        f" — scroll right to see all columns"
     )
 
     # ── Numeric Column Statistics ──────────────────────────────────────────────
@@ -761,9 +711,9 @@ else:
                 )
                 st.plotly_chart(fig, use_container_width=True)
 
-            with st.expander(f"🤖 AI Summary of `{col}` field", expanded=False):
-                if st.button(f"Summarize `{col}` field", key=f"summarize_{col}"):
-                    with st.spinner(f"Claude is analyzing `{col}`..."):
+            with st.expander(f"🤖 AI Summary of '{col}' field", expanded=False):
+                if st.button(f"Summarize '{col}' field", key=f"summarize_{col}"):
+                    with st.spinner(f"Claude is analyzing '{col}'..."):
                         summary = summarize_categorical_field(col, all_values, counts_dict)
                     st.markdown(
                         f'<div class="text-summary-box">{summary}</div>',
@@ -784,7 +734,6 @@ else:
 
         for col in long_char_cols:
             st.markdown(f"#### `{col}`")
-
             col_data = df[col].dropna()
 
             s1, s2, s3, s4 = st.columns(4)
@@ -801,7 +750,6 @@ else:
                     st.markdown(f"**Sample {idx_s}:** {str(val)[:500]}")
                     st.divider()
 
-            # Prominent sentiment CTA
             st.markdown(f"""
             <div style="background:#fff8f0; border:1px solid #f0c080;
                         border-radius:10px; padding:16px 20px; margin:10px 0;">
@@ -814,7 +762,7 @@ else:
             """, unsafe_allow_html=True)
 
             if st.button(
-                f"🔍 Analyze Sentiment in `{col}`",
+                f"🔍 Analyze Sentiment in '{col}'",
                 key=f"sentiment_{col}",
                 type="primary",
                 use_container_width=True
@@ -822,7 +770,7 @@ else:
                 sample_values = col_data.sample(
                     min(30, len(col_data)), random_state=42
                 ).tolist()
-                with st.spinner(f"Claude is reading and analyzing `{col}`..."):
+                with st.spinner(f"Claude is reading and analyzing '{col}'..."):
                     result = analyze_long_text_sentiment(col, sample_values)
                 render_sentiment_result(result)
 
@@ -833,10 +781,10 @@ st.divider()
 st.markdown("""
 <div style="text-align: center; padding: 16px 0 8px 0;
             color: #888; font-size: 13px;">
-    © 2026 <strong>DataDart</strong> · 🎯 Datadart — All rights reserved.·
+    © 2026 <strong>DataDart</strong> · 🎯 Datadart — All rights reserved. ·
     Powered by <strong>Claude AI</strong> + <strong>Streamlit</strong><br>
     <span style="font-size: 11px; opacity: 0.7;">
-    Your data never leaves your session · No data is stored or shared
+    Your data never leaves your session · No data is stored or shared.
     </span>
 </div>
 """, unsafe_allow_html=True)
