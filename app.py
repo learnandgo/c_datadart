@@ -488,7 +488,7 @@ else:
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
         st.page_link(
-            "pages/1_AI_Summary.py",
+            "pages/AI_Summary.py",
             label="✨ Open AI Summary Report →",
             icon="🤖",
             use_container_width=True
