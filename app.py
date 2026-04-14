@@ -26,7 +26,6 @@ st.markdown("""
     margin: 20px 0 10px 0;
     letter-spacing: 0.4px;
 }
-
 .exec-box {
     background-color: #f0f7ff;
     border-left: 5px solid #1a6aaa;
@@ -37,7 +36,6 @@ st.markdown("""
     line-height: 1.8;
     white-space: pre-wrap;
 }
-
 .hero-banner {
     background: linear-gradient(135deg, #0d2b4e 0%, #1a5a9a 100%);
     color: white;
@@ -66,7 +64,6 @@ st.markdown("""
     margin: 6px 4px 0 0;
     color: white;
 }
-
 .dataframe-container {
     overflow-x: auto;
     overflow-y: auto;
@@ -98,7 +95,6 @@ st.markdown("""
 }
 .dataframe-container tr:nth-child(even) { background-color: #f5f9ff; }
 .dataframe-container tr:hover { background-color: #e0eeff; }
-
 .upload-prompt {
     border: 2px dashed #4a90d9;
     border-radius: 12px;
@@ -109,14 +105,12 @@ st.markdown("""
     margin-top: 10px;
 }
 .upload-prompt h3 { color: #1a4a7a; font-size: 20px; margin-bottom: 8px; }
-
 .filter-title {
     font-weight: 600;
     font-size: 13px;
     color: #1a4a7a;
     margin-bottom: 6px;
 }
-
 .text-summary-box {
     background-color: #f0fff4;
     border-left: 5px solid #2ecc71;
@@ -127,7 +121,6 @@ st.markdown("""
     margin-top: 8px;
     white-space: pre-wrap;
 }
-
 .sentiment-positive {
     background-color: #f0fff4;
     border-left: 6px solid #27ae60;
@@ -254,11 +247,9 @@ def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.Dat
     if not short_char_cols:
         st.info("No short categorical columns available for filtering.")
         return filtered_df
-
     st.markdown("**🔽 Filter data by categorical fields:**")
     cols_to_show = short_char_cols[:4]
     filter_cols  = st.columns(len(cols_to_show))
-
     for i, cat_col in enumerate(cols_to_show):
         with filter_cols[i]:
             all_options = sorted(df[cat_col].dropna().unique().tolist())
@@ -297,7 +288,6 @@ def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.Dat
             selected = st.session_state[state_key]
             if selected:
                 filtered_df = filtered_df[filtered_df[cat_col].isin(selected)]
-
     st.caption(f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** rows after filters")
     return filtered_df
 
@@ -308,17 +298,14 @@ def summarize_categorical_field(col: str, all_values: list, counts_dict: dict) -
     return call_claude(f"""
 You are a data analyst. Summarize this categorical field in 2-4 plain English sentences.
 Cover: what the field represents, dominant values, concentration or spread, interesting patterns.
-
 Field name: {col}
 Total unique values: {len(all_values)}
 Top values by frequency:
 {top_values_str}
-
 Write only the summary, no preamble or headers.
 """)
 
 def analyze_long_text_sentiment(col: str, sample_values: list, sample_size: int, total_size: int) -> dict:
-    """FIX 1: Uses 30% random sample instead of fixed 30 rows."""
     samples_str = "\n".join([f"  - {str(v)[:300]}" for v in sample_values])
     raw = call_claude(f"""
 You are a data analyst specializing in text analysis and sentiment.
@@ -367,7 +354,6 @@ def render_sentiment_result(result: dict):
     }
     badge_class, badge_label = badge_map.get(sentiment, ("badge-neutral", "➖ Neutral"))
     box_class = box_map.get(sentiment, "sentiment-neutral")
-
     st.markdown(
         f'<span class="sentiment-badge {badge_class}">{badge_label} Sentiment</span>',
         unsafe_allow_html=True
@@ -453,10 +439,6 @@ else:
     else:
         df = pd.read_excel(file)
 
-    # Store df in session state so pages/summary.py can access it
-    st.session_state["df"]       = df
-    st.session_state["filename"] = file.name
-
     numeric_df   = df.select_dtypes(include="number")
     char_df      = df.select_dtypes(include="object")
     numeric_cols = numeric_df.columns.tolist()
@@ -482,20 +464,96 @@ else:
     m6.metric("Missing values",   f"{df.isnull().sum().sum():,}")
     st.success(f"✅ **{file.name}** loaded successfully!")
 
-    # ── AI Executive Summary — link to separate page ───────────────────────────
+    # ── AI Executive Summary ───────────────────────────────────────────────────
     section_header("🤖 AI Executive Summary")
+
+    # Prominent highlighted CTA box
+    st.markdown("""
+    <div style="
+        background: linear-gradient(135deg, #1a4a7a 0%, #2471a3 100%);
+        border-radius: 12px;
+        padding: 22px 28px;
+        margin: 10px 0 14px 0;
+        text-align: center;
+        box-shadow: 0 4px 12px rgba(26,74,122,0.3);
+    ">
+        <div style="font-size:28px; margin-bottom:6px;">🤖</div>
+        <p style="color:white; font-size:16px; font-weight:700; margin:0 0 4px 0;">
+            Get your AI-powered data summary
+        </p>
+        <p style="color:rgba(255,255,255,0.8); font-size:13px; margin:0;">
+            Executive summary · Analysis tables · Visual insights — all written by Claude
+        </p>
+    </div>
+    """, unsafe_allow_html=True)
 
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
-        st.link_button(
-            "✨ Open AI Summary Report →",
-            url="./AI_Summary",
-            use_container_width=True
+        generate_summary = st.button(
+            "✨ Generate AI Summary",
+            type="primary",
+            use_container_width=True,
+            key="generate_ai_summary"
         )
-    st.caption(
-        "Opens in a new page — executive summary, analysis tables, "
-        "and visual insights written by Claude for your dataset."
-    )
+
+    if generate_summary:
+        profile = build_profile_text(df)
+
+        with st.spinner("Claude is reading your data..."):
+            exec_text = call_claude(f"""
+You are a senior data analyst. Analyze this dataset profile and write:
+1. A 2-3 sentence executive summary of what this dataset contains
+2. 6-8 key bullet point insights with specific numbers from the data
+3. 2-3 watch-out flags or data quality observations
+
+Format exactly like this:
+
+EXECUTIVE SUMMARY
+[your 2-3 sentence summary]
+
+KEY INSIGHTS
+[bullet insights with specific numbers]
+
+WATCH-OUTS
+[bullet flags]
+
+Dataset profile:
+{profile}
+""")
+        with st.spinner("Generating analysis tables..."):
+            tables_text = call_claude(f"""
+You are a senior data analyst. Generate 3 meaningful analysis tables.
+For each: pick a relevant categorical grouping, aggregate key numeric columns,
+show top 5-6 rows, format as markdown table, add a 1-line insight below.
+Use clear bold titles.
+
+Dataset profile:
+{profile}
+""")
+        with st.spinner("Writing visual insights..."):
+            visual_text = call_claude(f"""
+You are a senior data analyst. Cover these four areas with headers and bullets:
+1. KEY DISTRIBUTIONS
+2. RELATIONSHIPS AND TRENDS
+3. RECOMMENDED VISUALIZATIONS
+4. ANOMALIES AND OUTLIERS
+Be specific with column names and numbers.
+
+Dataset profile:
+{profile}
+""")
+
+        st.markdown("#### 📋 Executive Summary")
+        st.markdown(
+            f'<div class="exec-box">{exec_text}</div>',
+            unsafe_allow_html=True
+        )
+        st.divider()
+        st.markdown("#### 📊 Analysis Tables")
+        st.markdown(tables_text)
+        st.divider()
+        st.markdown("#### 👁️ Visual Insights Narrative")
+        st.markdown(visual_text)
 
     st.divider()
 
@@ -538,7 +596,6 @@ else:
         filtered_df = render_categorical_filter(df, short_char_cols)
         st.divider()
 
-        # Histograms
         st.markdown("##### 📊 Distributions")
         cols_per_row = 2
         rows_needed  = -(-len(numeric_cols) // cols_per_row)
@@ -570,7 +627,6 @@ else:
 
         st.divider()
 
-        # Box plots
         st.markdown("##### 📦 Box Plots")
         for row in range(rows_needed):
             grid = st.columns(cols_per_row)
@@ -589,7 +645,6 @@ else:
 
         st.divider()
 
-        # Correlation heatmap
         if len(numeric_cols) >= 2:
             st.markdown("##### 🔗 Correlations Between Numeric Variables")
             corr = filtered_df[numeric_cols].corr().round(2)
@@ -676,23 +731,19 @@ else:
 
         for col in long_char_cols:
             st.markdown(f"#### `{col}`")
-            col_data = df[col].dropna()
-
-            # FIX 1: 30% random sample with a floor of 10 and ceiling of 500
+            col_data    = df[col].dropna()
             total_size  = len(col_data)
             sample_size = max(10, min(500, int(total_size * 0.30)))
 
             s1, s2, s3, s4, s5 = st.columns(5)
-            s1.metric("Total values",   f"{total_size:,}")
-            s2.metric("Unique values",  f"{col_data.nunique():,}")
-            s3.metric("Avg length",     f"{col_data.astype(str).str.len().mean():.0f} chars")
-            s4.metric("Max length",     f"{col_data.astype(str).str.len().max():,} chars")
-            s5.metric("Sample size",    f"{sample_size} ({round(sample_size/total_size*100)}%)")
+            s1.metric("Total values",  f"{total_size:,}")
+            s2.metric("Unique values", f"{col_data.nunique():,}")
+            s3.metric("Avg length",    f"{col_data.astype(str).str.len().mean():.0f} chars")
+            s4.metric("Max length",    f"{col_data.astype(str).str.len().max():,} chars")
+            s5.metric("Sample size",   f"{sample_size} ({round(sample_size/total_size*100)}%)")
 
             with st.expander("👀 Preview sample values", expanded=False):
-                sample_preview = col_data.sample(
-                    min(5, total_size), random_state=42
-                ).tolist()
+                sample_preview = col_data.sample(min(5, total_size), random_state=42).tolist()
                 for idx_s, val in enumerate(sample_preview, 1):
                     st.markdown(f"**Sample {idx_s}:** {str(val)[:500]}")
                     st.divider()
@@ -715,9 +766,7 @@ else:
                 type="primary",
                 use_container_width=True
             ):
-                sample_values = col_data.sample(
-                    sample_size, random_state=None  # truly random each time
-                ).tolist()
+                sample_values = col_data.sample(sample_size, random_state=None).tolist()
                 with st.spinner(f"Claude is analyzing {sample_size} samples from '{col}'..."):
                     result = analyze_long_text_sentiment(
                         col, sample_values, sample_size, total_size
@@ -726,7 +775,7 @@ else:
 
             st.divider()
 
-# ── Footer — zero indentation, always renders ──────────────────────────────────
+# ── Footer ──────────────────────────────────────────────────────────────────────
 st.divider()
 st.markdown("""
 <div style="text-align: center; padding: 16px 0 8px 0;
