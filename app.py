@@ -194,16 +194,6 @@ st.markdown("""
     line-height: 1.8;
     margin: 8px 0;
 }
-.ai-cta-box {
-    background: linear-gradient(135deg, #1a4a7a 0%, #2980b9 100%);
-    border-radius: 12px;
-    padding: 24px 28px;
-    margin: 12px 0 20px 0;
-    text-align: center;
-}
-.ai-cta-box h3 { color: white; font-size: 20px; margin: 0 0 8px 0; }
-.ai-cta-box p  { color: rgba(255,255,255,0.85); font-size: 14px; margin: 0 0 16px 0; }
-
 .sentiment-badge {
     display: inline-block;
     padding: 4px 14px;
@@ -258,60 +248,6 @@ def call_claude(prompt: str) -> str:
         messages=[{"role": "user", "content": prompt}]
     )
     return msg.content[0].text
-
-def render_ai_summary(df: pd.DataFrame):
-    profile = build_profile_text(df)
-    with st.spinner("Claude is reading your data..."):
-        exec_text = call_claude(f"""
-You are a senior data analyst. Analyze this dataset profile and write:
-1. A 2-3 sentence executive summary of what this dataset contains
-2. 6-8 key bullet point insights with specific numbers from the data
-3. 2-3 watch-out flags or data quality observations
-
-Format exactly like this:
-
-EXECUTIVE SUMMARY
-[your 2-3 sentence summary]
-
-KEY INSIGHTS
-[bullet insights]
-
-WATCH-OUTS
-[bullet flags]
-
-Dataset profile:
-{profile}
-""")
-    with st.spinner("Generating analysis tables..."):
-        tables_text = call_claude(f"""
-You are a senior data analyst. Generate 3 meaningful analysis tables.
-For each: pick a relevant categorical grouping, aggregate key numeric columns,
-show top 5-6 rows, format as markdown table, add a 1-line insight below.
-Use clear bold titles.
-
-Dataset profile:
-{profile}
-""")
-    with st.spinner("Writing visual insights narrative..."):
-        visual_text = call_claude(f"""
-You are a senior data analyst. Cover these four areas with headers and bullets:
-1. KEY DISTRIBUTIONS
-2. RELATIONSHIPS AND TRENDS
-3. RECOMMENDED VISUALIZATIONS
-4. ANOMALIES AND OUTLIERS
-Be specific with column names and numbers.
-
-Dataset profile:
-{profile}
-""")
-    st.markdown("#### 📋 Executive Summary")
-    st.markdown(f'<div class="exec-box">{exec_text}</div>', unsafe_allow_html=True)
-    st.divider()
-    st.markdown("#### 📊 Analysis Tables")
-    st.markdown(tables_text)
-    st.divider()
-    st.markdown("#### 👁️ Visual Insights Narrative")
-    st.markdown(visual_text)
 
 def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.DataFrame:
     filtered_df = df.copy()
@@ -381,8 +317,9 @@ Top values by frequency:
 Write only the summary, no preamble or headers.
 """)
 
-def analyze_long_text_sentiment(col: str, sample_values: list) -> dict:
-    samples_str = "\n".join([f"  - {str(v)[:300]}" for v in sample_values[:30]])
+def analyze_long_text_sentiment(col: str, sample_values: list, sample_size: int, total_size: int) -> dict:
+    """FIX 1: Uses 30% random sample instead of fixed 30 rows."""
+    samples_str = "\n".join([f"  - {str(v)[:300]}" for v in sample_values])
     raw = call_claude(f"""
 You are a data analyst specializing in text analysis and sentiment.
 Analyze these sample values and return ONLY a valid JSON object with exactly these keys:
@@ -396,6 +333,7 @@ Analyze these sample values and return ONLY a valid JSON object with exactly the
 }}
 
 Field name: {col}
+Sample size: {sample_size} values ({round(sample_size/total_size*100)}% of {total_size} total)
 Sample values:
 {samples_str}
 
@@ -515,6 +453,10 @@ else:
     else:
         df = pd.read_excel(file)
 
+    # Store df in session state so pages/summary.py can access it
+    st.session_state["df"]       = df
+    st.session_state["filename"] = file.name
+
     numeric_df   = df.select_dtypes(include="number")
     char_df      = df.select_dtypes(include="object")
     numeric_cols = numeric_df.columns.tolist()
@@ -540,20 +482,21 @@ else:
     m6.metric("Missing values",   f"{df.isnull().sum().sum():,}")
     st.success(f"✅ **{file.name}** loaded successfully!")
 
-    # ── AI Executive Summary — prominent CTA ──────────────────────────────────
+    # ── AI Executive Summary — link to separate page ───────────────────────────
     section_header("🤖 AI Executive Summary")
-    st.markdown("""
-    <div class="ai-cta-box">
-        <h3>🤖 Let Claude Analyze Your Data</h3>
-        <p>Get an instant executive summary, analysis tables, and visual insights
-        narrative — all written by Claude AI based on your specific dataset.</p>
-    </div>
-    """, unsafe_allow_html=True)
 
-    col_btn1, col_btn2, col_btn3 = st.columns([1, 2, 1])
-    with col_btn2:
-        if st.button("✨ Generate AI Summary", type="primary", use_container_width=True):
-            render_ai_summary(df)
+    col_l, col_m, col_r = st.columns([1, 2, 1])
+    with col_m:
+        st.page_link(
+            "pages/1_AI_Summary.py",
+            label="✨ Open AI Summary Report →",
+            icon="🤖",
+            use_container_width=True
+        )
+    st.caption(
+        "Opens in a new page — executive summary, analysis tables, "
+        "and visual insights written by Claude for your dataset."
+    )
 
     st.divider()
 
@@ -728,23 +671,28 @@ else:
         section_header("📝 Long Text Fields — Sentiment & Theme Analysis")
         st.markdown(
             "These fields contain long free-text values (avg > 100 characters). "
-            "Claude reads a sample and returns color-coded sentiment, themes, "
-            "issues, and improvement suggestions."
+            "Claude reads a 30% random sample and returns color-coded sentiment, "
+            "themes, issues, and improvement suggestions."
         )
 
         for col in long_char_cols:
             st.markdown(f"#### `{col}`")
             col_data = df[col].dropna()
 
-            s1, s2, s3, s4 = st.columns(4)
-            s1.metric("Total values",  f"{len(col_data):,}")
-            s2.metric("Unique values", f"{col_data.nunique():,}")
-            s3.metric("Avg length",    f"{col_data.astype(str).str.len().mean():.0f} chars")
-            s4.metric("Max length",    f"{col_data.astype(str).str.len().max():,} chars")
+            # FIX 1: 30% random sample with a floor of 10 and ceiling of 500
+            total_size  = len(col_data)
+            sample_size = max(10, min(500, int(total_size * 0.30)))
+
+            s1, s2, s3, s4, s5 = st.columns(5)
+            s1.metric("Total values",   f"{total_size:,}")
+            s2.metric("Unique values",  f"{col_data.nunique():,}")
+            s3.metric("Avg length",     f"{col_data.astype(str).str.len().mean():.0f} chars")
+            s4.metric("Max length",     f"{col_data.astype(str).str.len().max():,} chars")
+            s5.metric("Sample size",    f"{sample_size} ({round(sample_size/total_size*100)}%)")
 
             with st.expander("👀 Preview sample values", expanded=False):
                 sample_preview = col_data.sample(
-                    min(5, len(col_data)), random_state=42
+                    min(5, total_size), random_state=42
                 ).tolist()
                 for idx_s, val in enumerate(sample_preview, 1):
                     st.markdown(f"**Sample {idx_s}:** {str(val)[:500]}")
@@ -755,8 +703,9 @@ else:
                         border-radius:10px; padding:16px 20px; margin:10px 0;">
                 <strong>🤖 Sentiment Analysis available for this field</strong><br>
                 <span style="font-size:13px; color:#666;">
-                Click below to let Claude analyze tone, themes, issues and
-                improvement suggestions from a sample of {min(30, len(col_data))} values.
+                Claude will analyze a random 30% sample
+                ({sample_size} of {total_size} values) for sentiment,
+                themes, issues, and improvement suggestions.
                 </span>
             </div>
             """, unsafe_allow_html=True)
@@ -768,10 +717,12 @@ else:
                 use_container_width=True
             ):
                 sample_values = col_data.sample(
-                    min(30, len(col_data)), random_state=42
+                    sample_size, random_state=None  # truly random each time
                 ).tolist()
-                with st.spinner(f"Claude is reading and analyzing '{col}'..."):
-                    result = analyze_long_text_sentiment(col, sample_values)
+                with st.spinner(f"Claude is analyzing {sample_size} samples from '{col}'..."):
+                    result = analyze_long_text_sentiment(
+                        col, sample_values, sample_size, total_size
+                    )
                 render_sentiment_result(result)
 
             st.divider()
