@@ -79,13 +79,13 @@ def build_profile_text(df) -> str:
     return "\n".join(lines)
 
 # ── Back button ────────────────────────────────────────────────────────────────
-st.page_link("app.py", label="← Back to DataDart", icon="🎯")
+st.link_button("← Back to DataDart", url="/", use_container_width=False)
 st.divider()
 
 # ── Check session state for data ───────────────────────────────────────────────
 if "df" not in st.session_state or st.session_state["df"] is None:
     st.warning("⚠️ No dataset loaded. Please go back to DataDart and upload a file first.")
-    st.page_link("app.py", label="Go to DataDart →", icon="🎯", use_container_width=True)
+    st.link_button("Go to DataDart →", url="/", use_container_width=True)
     st.stop()
 
 df       = st.session_state["df"]
