@@ -4,6 +4,26 @@ import plotly.express as px
 import numpy as np
 import anthropic
 import json
+import io
+import re
+from datetime import datetime
+
+# PDF
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.lib.units import cm
+from reportlab.platypus import (
+    SimpleDocTemplate, Paragraph, Spacer,
+    Table, TableStyle, HRFlowable, PageBreak
+)
+from reportlab.lib.enums import TA_CENTER, TA_LEFT
+
+# PPT
+from pptx import Presentation
+from pptx.util import Inches, Pt, Emu
+from pptx.dml.color import RGBColor
+from pptx.enum.text import PP_ALIGN
 
 # ── Page config ────────────────────────────────────────────────────────────────
 st.set_page_config(
@@ -15,7 +35,6 @@ st.set_page_config(
 # ── Custom CSS ─────────────────────────────────────────────────────────────────
 st.markdown("""
 <style>
-
 .section-header {
     background: linear-gradient(90deg, #1a4a7a 0%, #1a6aaa 100%);
     color: white;
@@ -43,18 +62,8 @@ st.markdown("""
     border-radius: 12px;
     margin-bottom: 24px;
 }
-.hero-banner h1 {
-    font-size: 32px;
-    font-weight: 700;
-    margin: 0 0 6px 0;
-    color: white;
-}
-.hero-banner p {
-    font-size: 16px;
-    margin: 4px 0;
-    opacity: 0.88;
-    color: white;
-}
+.hero-banner h1 { font-size: 32px; font-weight: 700; margin: 0 0 6px 0; color: white; }
+.hero-banner p  { font-size: 16px; margin: 4px 0; opacity: 0.88; color: white; }
 .hero-tag {
     display: inline-block;
     background: rgba(255,255,255,0.18);
@@ -65,154 +74,48 @@ st.markdown("""
     color: white;
 }
 .dataframe-container {
-    overflow-x: auto;
-    overflow-y: auto;
-    max-height: 420px;
-    width: 100%;
-    display: block;
-    border: 1px solid #d0e0f0;
-    border-radius: 6px;
-    padding: 4px;
+    overflow-x: auto; overflow-y: auto;
+    max-height: 420px; width: 100%; display: block;
+    border: 1px solid #d0e0f0; border-radius: 6px; padding: 4px;
 }
-.dataframe-container table {
-    border-collapse: collapse;
-    font-size: 13px;
-    white-space: nowrap;
-    width: max-content;
-}
-.dataframe-container th {
-    background-color: #1a6aaa;
-    color: white;
-    padding: 7px 14px;
-    text-align: left;
-    position: sticky;
-    top: 0;
-    z-index: 1;
-}
-.dataframe-container td {
-    padding: 6px 14px;
-    border-bottom: 1px solid #e8f0f8;
-}
+.dataframe-container table { border-collapse: collapse; font-size: 13px; white-space: nowrap; width: max-content; }
+.dataframe-container th { background-color: #1a6aaa; color: white; padding: 7px 14px; text-align: left; position: sticky; top: 0; z-index: 1; }
+.dataframe-container td { padding: 6px 14px; border-bottom: 1px solid #e8f0f8; }
 .dataframe-container tr:nth-child(even) { background-color: #f5f9ff; }
 .dataframe-container tr:hover { background-color: #e0eeff; }
-.upload-prompt {
-    border: 2px dashed #4a90d9;
-    border-radius: 12px;
-    padding: 36px;
-    text-align: center;
-    color: #4a6a8a;
-    background-color: #f8fbff;
-    margin-top: 10px;
-}
+.upload-prompt { border: 2px dashed #4a90d9; border-radius: 12px; padding: 36px; text-align: center; color: #4a6a8a; background-color: #f8fbff; margin-top: 10px; }
 .upload-prompt h3 { color: #1a4a7a; font-size: 20px; margin-bottom: 8px; }
-.filter-title {
-    font-weight: 600;
-    font-size: 13px;
-    color: #1a4a7a;
-    margin-bottom: 6px;
-}
-.text-summary-box {
-    background-color: #f0fff4;
-    border-left: 5px solid #2ecc71;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.7;
-    margin-top: 8px;
-    white-space: pre-wrap;
-}
-.sentiment-positive {
-    background-color: #f0fff4;
-    border-left: 6px solid #27ae60;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.sentiment-negative {
-    background-color: #fff5f5;
-    border-left: 6px solid #e74c3c;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.sentiment-neutral {
-    background-color: #f8f9fa;
-    border-left: 6px solid #95a5a6;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.sentiment-mixed {
-    background-color: #fffbf0;
-    border-left: 6px solid #f39c12;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.issues-box {
-    background-color: #fff5f5;
-    border: 1px solid #fadbd8;
-    border-left: 6px solid #c0392b;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.improvements-box {
-    background-color: #fef9e7;
-    border: 1px solid #fdebd0;
-    border-left: 6px solid #e67e22;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.themes-box {
-    background-color: #eaf4fb;
-    border: 1px solid #d6eaf8;
-    border-left: 6px solid #2980b9;
-    padding: 14px 18px;
-    border-radius: 6px;
-    font-size: 14px;
-    line-height: 1.8;
-    margin: 8px 0;
-}
-.sentiment-badge {
-    display: inline-block;
-    padding: 4px 14px;
-    border-radius: 20px;
-    font-size: 13px;
-    font-weight: 600;
-    margin-bottom: 10px;
-}
+.filter-title { font-weight: 600; font-size: 13px; color: #1a4a7a; margin-bottom: 6px; }
+.text-summary-box { background-color: #f0fff4; border-left: 5px solid #2ecc71; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.7; margin-top: 8px; white-space: pre-wrap; }
+.sentiment-positive { background-color: #f0fff4; border-left: 6px solid #27ae60; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.sentiment-negative { background-color: #fff5f5; border-left: 6px solid #e74c3c; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.sentiment-neutral  { background-color: #f8f9fa; border-left: 6px solid #95a5a6; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.sentiment-mixed    { background-color: #fffbf0; border-left: 6px solid #f39c12; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.issues-box      { background-color: #fff5f5; border: 1px solid #fadbd8; border-left: 6px solid #c0392b; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.improvements-box{ background-color: #fef9e7; border: 1px solid #fdebd0; border-left: 6px solid #e67e22; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.themes-box      { background-color: #eaf4fb; border: 1px solid #d6eaf8; border-left: 6px solid #2980b9; padding: 14px 18px; border-radius: 6px; font-size: 14px; line-height: 1.8; margin: 8px 0; }
+.sentiment-badge { display: inline-block; padding: 4px 14px; border-radius: 20px; font-size: 13px; font-weight: 600; margin-bottom: 10px; }
 .badge-positive { background: #d5f5e3; color: #1e8449; }
 .badge-negative { background: #fadbd8; color: #922b21; }
 .badge-neutral  { background: #e8e8e8; color: #555; }
 .badge-mixed    { background: #fef9e7; color: #b7770d; }
-
+.download-strip {
+    background: #f0f7ff;
+    border: 1px solid #c0d8f0;
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin: 16px 0;
+    text-align: center;
+}
 </style>
 """, unsafe_allow_html=True)
 
-# ── Constants ──────────────────────────────────────────────────────────────────
 BLUE       = "#4a90d9"
 BLUE_SCALE = ["#d0e8ff", "#4a90d9", "#1a4a7a"]
 
 # ── Helper functions ───────────────────────────────────────────────────────────
 def section_header(title: str):
-    st.markdown(
-        f'<div class="section-header">📌 {title}</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(f'<div class="section-header">📌 {title}</div>', unsafe_allow_html=True)
 
 def build_profile_text(df: pd.DataFrame) -> str:
     numeric_df = df.select_dtypes(include="number")
@@ -232,7 +135,7 @@ def build_profile_text(df: pd.DataFrame) -> str:
 
 def call_claude(prompt: str) -> str:
     if "ANTHROPIC_API_KEY" not in st.secrets:
-        st.error("⚠️ Anthropic API key not found. Add ANTHROPIC_API_KEY to Streamlit secrets.")
+        st.error("⚠️ Anthropic API key not found.")
         st.stop()
     client = anthropic.Anthropic(api_key=st.secrets["ANTHROPIC_API_KEY"])
     msg = client.messages.create(
@@ -242,6 +145,275 @@ def call_claude(prompt: str) -> str:
     )
     return msg.content[0].text
 
+def clean_text(text: str) -> str:
+    """Strip markdown symbols for use in PDF/PPT."""
+    text = re.sub(r'\*\*(.*?)\*\*', r'\1', text)
+    text = re.sub(r'\*(.*?)\*',     r'\1', text)
+    text = re.sub(r'#{1,6}\s',      '',    text)
+    text = re.sub(r'`(.*?)`',       r'\1', text)
+    return text.strip()
+
+# ── PDF Export ─────────────────────────────────────────────────────────────────
+def generate_pdf(filename: str, df: pd.DataFrame,
+                 exec_text: str, tables_text: str, visual_text: str) -> bytes:
+    buffer = io.BytesIO()
+    doc    = SimpleDocTemplate(
+        buffer, pagesize=A4,
+        leftMargin=2*cm, rightMargin=2*cm,
+        topMargin=2*cm, bottomMargin=2*cm
+    )
+
+    styles = getSampleStyleSheet()
+    dark_blue = colors.HexColor("#1a4a7a")
+    mid_blue  = colors.HexColor("#2980b9")
+
+    style_title = ParagraphStyle(
+        "Title", parent=styles["Title"],
+        fontSize=28, textColor=colors.white,
+        spaceAfter=6, alignment=TA_CENTER
+    )
+    style_sub = ParagraphStyle(
+        "Sub", parent=styles["Normal"],
+        fontSize=11, textColor=colors.HexColor("#ccddee"),
+        alignment=TA_CENTER, spaceAfter=4
+    )
+    style_h1 = ParagraphStyle(
+        "H1", parent=styles["Heading1"],
+        fontSize=16, textColor=dark_blue,
+        spaceBefore=14, spaceAfter=6,
+        borderPad=4
+    )
+    style_h2 = ParagraphStyle(
+        "H2", parent=styles["Heading2"],
+        fontSize=13, textColor=mid_blue,
+        spaceBefore=10, spaceAfter=4
+    )
+    style_body = ParagraphStyle(
+        "Body", parent=styles["Normal"],
+        fontSize=10, leading=15,
+        spaceAfter=6
+    )
+    style_bullet = ParagraphStyle(
+        "Bullet", parent=styles["Normal"],
+        fontSize=10, leading=15,
+        leftIndent=16, spaceAfter=4,
+        bulletIndent=6
+    )
+
+    story = []
+
+    # ── Cover page ─────────────────────────────────────────────────────────────
+    cover_data = [[
+        Paragraph("🎯 DataDart", style_title),
+    ]]
+    cover_table = Table(cover_data, colWidths=[17*cm])
+    cover_table.setStyle(TableStyle([
+        ("BACKGROUND", (0,0), (-1,-1), dark_blue),
+        ("ROUNDEDCORNERS", (0,0), (-1,-1), 8),
+        ("TOPPADDING",    (0,0), (-1,-1), 24),
+        ("BOTTOMPADDING", (0,0), (-1,-1), 24),
+    ]))
+    story.append(cover_table)
+    story.append(Spacer(1, 0.4*cm))
+    story.append(Paragraph(f"AI Analysis Report", style_h1))
+    story.append(Paragraph(f"Dataset: {filename}", style_body))
+    story.append(Paragraph(
+        f"Generated: {datetime.now().strftime('%B %d, %Y at %H:%M')}",
+        style_body
+    ))
+    story.append(Paragraph(
+        f"Rows: {df.shape[0]:,}  ·  Columns: {df.shape[1]}",
+        style_body
+    ))
+    story.append(HRFlowable(width="100%", thickness=1, color=dark_blue))
+    story.append(PageBreak())
+
+    # ── Executive Summary ──────────────────────────────────────────────────────
+    story.append(Paragraph("Executive Summary", style_h1))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=mid_blue))
+    story.append(Spacer(1, 0.2*cm))
+    for line in clean_text(exec_text).split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("•") or line.startswith("-"):
+            story.append(Paragraph(f"• {line.lstrip('•-').strip()}", style_bullet))
+        elif line.isupper() and len(line) < 40:
+            story.append(Paragraph(line, style_h2))
+        else:
+            story.append(Paragraph(line, style_body))
+    story.append(PageBreak())
+
+    # ── Analysis Tables (text) ─────────────────────────────────────────────────
+    story.append(Paragraph("Analysis Tables", style_h1))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=mid_blue))
+    story.append(Spacer(1, 0.2*cm))
+    for line in clean_text(tables_text).split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("|"):
+            story.append(Paragraph(line, style_body))
+        elif line.isupper() and len(line) < 50:
+            story.append(Paragraph(line, style_h2))
+        else:
+            story.append(Paragraph(line, style_body))
+    story.append(PageBreak())
+
+    # ── Visual Insights ────────────────────────────────────────────────────────
+    story.append(Paragraph("Visual Insights Narrative", style_h1))
+    story.append(HRFlowable(width="100%", thickness=0.5, color=mid_blue))
+    story.append(Spacer(1, 0.2*cm))
+    for line in clean_text(visual_text).split("\n"):
+        line = line.strip()
+        if not line:
+            continue
+        if line.startswith("•") or line.startswith("-"):
+            story.append(Paragraph(f"• {line.lstrip('•-').strip()}", style_bullet))
+        elif line.isupper() and len(line) < 50:
+            story.append(Paragraph(line, style_h2))
+        else:
+            story.append(Paragraph(line, style_body))
+
+    # ── Footer on every page ───────────────────────────────────────────────────
+    def add_footer(canvas, doc):
+        canvas.saveState()
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#888888"))
+        canvas.drawString(
+            2*cm, 1*cm,
+            f"© 2026 DataDart · 🎯 Datadart — All rights reserved. · "
+            f"Powered by Claude AI + Streamlit"
+        )
+        canvas.drawRightString(
+            A4[0] - 2*cm, 1*cm,
+            f"Page {doc.page}"
+        )
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=add_footer, onLaterPages=add_footer)
+    return buffer.getvalue()
+
+# ── PPT Export ─────────────────────────────────────────────────────────────────
+def generate_ppt(filename: str, df: pd.DataFrame,
+                 exec_text: str, tables_text: str, visual_text: str) -> bytes:
+    prs = Presentation()
+    prs.slide_width  = Inches(13.33)
+    prs.slide_height = Inches(7.5)
+
+    DARK_BLUE = RGBColor(0x1a, 0x4a, 0x7a)
+    MID_BLUE  = RGBColor(0x29, 0x80, 0xb9)
+    WHITE     = RGBColor(0xFF, 0xFF, 0xFF)
+    LIGHT     = RGBColor(0xf0, 0xf7, 0xff)
+
+    blank = prs.slide_layouts[6]  # blank layout
+
+    def add_slide(title_text: str, body_lines: list,
+                  title_bg: RGBColor = DARK_BLUE,
+                  is_cover: bool = False):
+        slide = prs.slides.add_slide(blank)
+        sw = prs.slide_width
+        sh = prs.slide_height
+
+        # Title bar
+        title_h = Inches(1.1) if not is_cover else Inches(2.2)
+        title_box = slide.shapes.add_textbox(0, 0, sw, title_h)
+        tf = title_box.text_frame
+        tf.word_wrap = True
+        p = tf.paragraphs[0]
+        p.text      = title_text
+        p.alignment = PP_ALIGN.CENTER
+        run = p.runs[0]
+        run.font.size  = Pt(32) if is_cover else Pt(24)
+        run.font.bold  = True
+        run.font.color.rgb = WHITE
+        title_box.fill.solid()
+        title_box.fill.fore_color.rgb = title_bg
+
+        if not body_lines:
+            return slide
+
+        # Body text box
+        body_box = slide.shapes.add_textbox(
+            Inches(0.5), title_h + Inches(0.2),
+            sw - Inches(1), sh - title_h - Inches(0.4)
+        )
+        tf = body_box.text_frame
+        tf.word_wrap = True
+
+        first = True
+        for line in body_lines:
+            line = line.strip()
+            if not line:
+                continue
+            p = tf.paragraphs[0] if first else tf.add_paragraph()
+            first = False
+            is_bullet = line.startswith("•") or line.startswith("-")
+            is_header  = line.isupper() and len(line) < 50
+            p.text = line.lstrip("•-").strip()
+            p.level = 1 if is_bullet else 0
+            run = p.runs[0] if p.runs else p.add_run()
+            run.font.size  = Pt(11) if is_bullet else (Pt(14) if is_header else Pt(12))
+            run.font.bold  = is_header
+            run.font.color.rgb = DARK_BLUE if is_header else RGBColor(0x22, 0x22, 0x22)
+
+        return slide
+
+    # Slide 1 — Cover
+    add_slide(
+        "🎯 DataDart — AI Analysis Report",
+        [
+            f"Dataset: {filename}",
+            f"Generated: {datetime.now().strftime('%B %d, %Y')}",
+            f"Rows: {df.shape[0]:,}  ·  Columns: {df.shape[1]}",
+            "",
+            "Powered by Claude AI + Streamlit",
+            "© 2026 DataDart · All rights reserved."
+        ],
+        title_bg=DARK_BLUE,
+        is_cover=True
+    )
+
+    # Slide 2 — Dataset Overview
+    numeric_df  = df.select_dtypes(include="number")
+    char_df     = df.select_dtypes(include="object")
+    add_slide(
+        "Dataset Overview",
+        [
+            f"• Total rows: {df.shape[0]:,}",
+            f"• Total columns: {df.shape[1]}",
+            f"• Numeric columns ({len(numeric_df.columns)}): {', '.join(numeric_df.columns[:8].tolist())}",
+            f"• Categorical columns ({len(char_df.columns)}): {', '.join(char_df.columns[:8].tolist())}",
+            f"• Missing values: {df.isnull().sum().sum():,}",
+        ]
+    )
+
+    # Slide 3 — Executive Summary
+    exec_lines = [l for l in clean_text(exec_text).split("\n") if l.strip()]
+    add_slide("Executive Summary", exec_lines)
+
+    # Slide 4 — Analysis Tables
+    table_lines = [l for l in clean_text(tables_text).split("\n") if l.strip()]
+    # Split into chunks of 20 lines per slide
+    chunk_size = 20
+    for i in range(0, len(table_lines), chunk_size):
+        chunk = table_lines[i:i+chunk_size]
+        title = "Analysis Tables" if i == 0 else "Analysis Tables (continued)"
+        add_slide(title, chunk)
+
+    # Slide 5 — Visual Insights
+    visual_lines = [l for l in clean_text(visual_text).split("\n") if l.strip()]
+    for i in range(0, len(visual_lines), chunk_size):
+        chunk = visual_lines[i:i+chunk_size]
+        title = "Visual Insights" if i == 0 else "Visual Insights (continued)"
+        add_slide(title, chunk)
+
+    buffer = io.BytesIO()
+    prs.save(buffer)
+    return buffer.getvalue()
+
+
+# ── Categorical filter ─────────────────────────────────────────────────────────
 def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.DataFrame:
     filtered_df = df.copy()
     if not short_char_cols:
@@ -254,11 +426,8 @@ def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.Dat
         with filter_cols[i]:
             all_options = sorted(df[cat_col].dropna().unique().tolist())
             st.markdown(f'<div class="filter-title">{cat_col}</div>', unsafe_allow_html=True)
-            search = st.text_input(
-                "Search", key=f"search_{cat_col}",
-                placeholder="Type to search...",
-                label_visibility="collapsed"
-            )
+            search = st.text_input("Search", key=f"search_{cat_col}",
+                placeholder="Type to search...", label_visibility="collapsed")
             filtered_options = (
                 [o for o in all_options if search.lower() in str(o).lower()]
                 if search else all_options
@@ -277,10 +446,7 @@ def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.Dat
             with checkbox_container:
                 for option in filtered_options:
                     checked = option in st.session_state[state_key]
-                    new_val = st.checkbox(
-                        str(option), value=checked,
-                        key=f"chk_{cat_col}_{option}"
-                    )
+                    new_val = st.checkbox(str(option), value=checked, key=f"chk_{cat_col}_{option}")
                     if new_val:
                         st.session_state[state_key].add(option)
                     else:
@@ -291,10 +457,8 @@ def render_categorical_filter(df: pd.DataFrame, short_char_cols: list) -> pd.Dat
     st.caption(f"📊 Showing **{len(filtered_df):,}** of **{len(df):,}** rows after filters")
     return filtered_df
 
-def summarize_categorical_field(col: str, all_values: list, counts_dict: dict) -> str:
-    top_values_str = "\n".join(
-        [f"  {v}: {c} occurrences" for v, c in list(counts_dict.items())[:15]]
-    )
+def summarize_categorical_field(col, all_values, counts_dict) -> str:
+    top_values_str = "\n".join([f"  {v}: {c} occurrences" for v, c in list(counts_dict.items())[:15]])
     return call_claude(f"""
 You are a data analyst. Summarize this categorical field in 2-4 plain English sentences.
 Cover: what the field represents, dominant values, concentration or spread, interesting patterns.
@@ -305,11 +469,11 @@ Top values by frequency:
 Write only the summary, no preamble or headers.
 """)
 
-def analyze_long_text_sentiment(col: str, sample_values: list, sample_size: int, total_size: int) -> dict:
+def analyze_long_text_sentiment(col, sample_values, sample_size, total_size) -> dict:
     samples_str = "\n".join([f"  - {str(v)[:300]}" for v in sample_values])
     raw = call_claude(f"""
 You are a data analyst specializing in text analysis and sentiment.
-Analyze these sample values and return ONLY a valid JSON object with exactly these keys:
+Analyze these sample values and return ONLY a valid JSON object:
 
 {{
   "sentiment": "positive or negative or neutral or mixed",
@@ -330,59 +494,27 @@ Return ONLY the JSON. No markdown, no explanation.
         clean = raw.strip().replace("```json", "").replace("```", "").strip()
         return json.loads(clean)
     except Exception:
-        return {
-            "sentiment": "mixed",
-            "sentiment_summary": raw[:300],
-            "themes": "Could not parse structured response.",
-            "issues": "Could not parse structured response.",
-            "improvements": "Could not parse structured response."
-        }
+        return {"sentiment": "mixed", "sentiment_summary": raw[:300],
+                "themes": "Could not parse.", "issues": "Could not parse.", "improvements": "Could not parse."}
 
 def render_sentiment_result(result: dict):
-    sentiment = result.get("sentiment", "neutral").lower()
-    badge_map = {
-        "positive": ("badge-positive", "✅ Positive"),
-        "negative": ("badge-negative", "❌ Negative"),
-        "neutral":  ("badge-neutral",  "➖ Neutral"),
-        "mixed":    ("badge-mixed",    "🔀 Mixed"),
-    }
-    box_map = {
-        "positive": "sentiment-positive",
-        "negative": "sentiment-negative",
-        "neutral":  "sentiment-neutral",
-        "mixed":    "sentiment-mixed",
-    }
+    sentiment  = result.get("sentiment", "neutral").lower()
+    badge_map  = {"positive": ("badge-positive", "✅ Positive"), "negative": ("badge-negative", "❌ Negative"),
+                  "neutral":  ("badge-neutral",  "➖ Neutral"),  "mixed":    ("badge-mixed",    "🔀 Mixed")}
+    box_map    = {"positive": "sentiment-positive", "negative": "sentiment-negative",
+                  "neutral":  "sentiment-neutral",  "mixed":    "sentiment-mixed"}
     badge_class, badge_label = badge_map.get(sentiment, ("badge-neutral", "➖ Neutral"))
     box_class = box_map.get(sentiment, "sentiment-neutral")
-    st.markdown(
-        f'<span class="sentiment-badge {badge_class}">{badge_label} Sentiment</span>',
-        unsafe_allow_html=True
-    )
-    st.markdown(
-        f'<div class="{box_class}"><strong>Overall Sentiment</strong><br>'
-        f'{result.get("sentiment_summary","")}</div>',
-        unsafe_allow_html=True
-    )
+    st.markdown(f'<span class="sentiment-badge {badge_class}">{badge_label} Sentiment</span>', unsafe_allow_html=True)
+    st.markdown(f'<div class="{box_class}"><strong>Overall Sentiment</strong><br>{result.get("sentiment_summary","")}</div>', unsafe_allow_html=True)
     if result.get("themes"):
-        st.markdown(
-            f'<div class="themes-box"><strong>🔵 Key Themes</strong><br>'
-            f'{result.get("themes","")}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="themes-box"><strong>🔵 Key Themes</strong><br>{result.get("themes","")}</div>', unsafe_allow_html=True)
     issues = result.get("issues", "None identified")
     if issues and issues.strip().lower() != "none identified":
-        st.markdown(
-            f'<div class="issues-box"><strong>🔴 Issues and Complaints</strong><br>'
-            f'{issues}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="issues-box"><strong>🔴 Issues and Complaints</strong><br>{issues}</div>', unsafe_allow_html=True)
     improvements = result.get("improvements", "None identified")
     if improvements and improvements.strip().lower() != "none identified":
-        st.markdown(
-            f'<div class="improvements-box"><strong>🟠 Improvement Suggestions</strong><br>'
-            f'{improvements}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="improvements-box"><strong>🟠 Improvement Suggestions</strong><br>{improvements}</div>', unsafe_allow_html=True)
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -398,7 +530,7 @@ st.markdown("""
     <span class="hero-tag">📈 Auto Charts</span>
     <span class="hero-tag">🤖 AI Insights</span>
     <span class="hero-tag">🔗 Correlations</span>
-    <span class="hero-tag">📤 Export coming soon</span>
+    <span class="hero-tag">📤 PDF + PPT Export</span>
 </div>
 """, unsafe_allow_html=True)
 
@@ -406,20 +538,16 @@ c1, c2, c3, c4 = st.columns(4)
 c1.info("**Step 1** 📁\nUpload CSV or Excel file")
 c2.info("**Step 2** 📊\nAuto stats + charts generated")
 c3.info("**Step 3** 🔍\nExplore distributions & correlations")
-c4.info("**Step 4** 🤖\nGenerate AI executive summary")
+c4.info("**Step 4** 🤖\nGenerate AI summary + export")
 
 st.divider()
 
-# ── File uploader ──────────────────────────────────────────────────────────────
 file = st.file_uploader(
     "📂 Drop your data file here or click to browse",
     type=["csv", "xlsx", "xls"],
     help="Supported: CSV, Excel (.xlsx, .xls)"
 )
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN CONTENT
-# ══════════════════════════════════════════════════════════════════════════════
 if not file:
     st.markdown("""
     <div class="upload-prompt">
@@ -444,14 +572,8 @@ else:
     numeric_cols = numeric_df.columns.tolist()
     char_cols    = char_df.columns.tolist()
 
-    short_char_cols = [
-        col for col in char_cols
-        if df[col].dropna().astype(str).str.len().mean() <= 100
-    ]
-    long_char_cols = [
-        col for col in char_cols
-        if df[col].dropna().astype(str).str.len().mean() > 100
-    ]
+    short_char_cols = [col for col in char_cols if df[col].dropna().astype(str).str.len().mean() <= 100]
+    long_char_cols  = [col for col in char_cols if df[col].dropna().astype(str).str.len().mean() > 100]
 
     # ── Overall Table Summary ──────────────────────────────────────────────────
     section_header("Overall Table Summary")
@@ -467,22 +589,19 @@ else:
     # ── AI Executive Summary ───────────────────────────────────────────────────
     section_header("🤖 AI Executive Summary")
 
-    # Prominent highlighted CTA box
     st.markdown("""
     <div style="
         background: linear-gradient(135deg, #1a4a7a 0%, #2471a3 100%);
-        border-radius: 12px;
-        padding: 22px 28px;
-        margin: 10px 0 14px 0;
-        text-align: center;
-        box-shadow: 0 4px 12px rgba(26,74,122,0.3);
+        border-radius: 12px; padding: 22px 28px; margin: 10px 0 14px 0;
+        text-align: center; box-shadow: 0 4px 12px rgba(26,74,122,0.3);
     ">
         <div style="font-size:28px; margin-bottom:6px;">🤖</div>
         <p style="color:white; font-size:16px; font-weight:700; margin:0 0 4px 0;">
             Get your AI-powered data summary
         </p>
         <p style="color:rgba(255,255,255,0.8); font-size:13px; margin:0;">
-            Executive summary · Analysis tables · Visual insights — all written by Claude
+            Executive summary · Analysis tables · Visual insights —
+            then download as PDF or PowerPoint
         </p>
     </div>
     """, unsafe_allow_html=True)
@@ -490,7 +609,7 @@ else:
     col_l, col_m, col_r = st.columns([1, 2, 1])
     with col_m:
         generate_summary = st.button(
-            "✨ Generate AI Summary",
+            "✨ Generate AI Summary + Export",
             type="primary",
             use_container_width=True,
             key="generate_ai_summary"
@@ -512,10 +631,12 @@ EXECUTIVE SUMMARY
 [your 2-3 sentence summary]
 
 KEY INSIGHTS
-[bullet insights with specific numbers]
+• [insight with specific numbers]
+• [insight with specific numbers]
 
 WATCH-OUTS
-[bullet flags]
+• [flag or data quality note]
+• [flag or data quality note]
 
 Dataset profile:
 {profile}
@@ -543,17 +664,56 @@ Dataset profile:
 {profile}
 """)
 
+        # Render summary on screen
         st.markdown("#### 📋 Executive Summary")
-        st.markdown(
-            f'<div class="exec-box">{exec_text}</div>',
-            unsafe_allow_html=True
-        )
+        st.markdown(f'<div class="exec-box">{exec_text}</div>', unsafe_allow_html=True)
         st.divider()
         st.markdown("#### 📊 Analysis Tables")
         st.markdown(tables_text)
         st.divider()
         st.markdown("#### 👁️ Visual Insights Narrative")
         st.markdown(visual_text)
+        st.divider()
+
+        # ── Export strip ───────────────────────────────────────────────────────
+        st.markdown("""
+        <div class="download-strip">
+            <strong>📥 Export your AI Summary</strong><br>
+            <span style="font-size:13px; color:#555;">
+            Download the full report as PDF or PowerPoint
+            </span>
+        </div>
+        """, unsafe_allow_html=True)
+
+        with st.spinner("Generating PDF..."):
+            pdf_bytes = generate_pdf(
+                file.name, df, exec_text, tables_text, visual_text
+            )
+        with st.spinner("Generating PowerPoint..."):
+            ppt_bytes = generate_ppt(
+                file.name, df, exec_text, tables_text, visual_text
+            )
+
+        export_date = datetime.now().strftime("%Y%m%d")
+        base_name   = file.name.rsplit(".", 1)[0]
+
+        dl1, dl2 = st.columns(2)
+        with dl1:
+            st.download_button(
+                label="📄 Download PDF Report",
+                data=pdf_bytes,
+                file_name=f"DataDart_{base_name}_{export_date}.pdf",
+                mime="application/pdf",
+                use_container_width=True
+            )
+        with dl2:
+            st.download_button(
+                label="📊 Download PowerPoint",
+                data=ppt_bytes,
+                file_name=f"DataDart_{base_name}_{export_date}.pptx",
+                mime="application/vnd.openxmlformats-officedocument.presentationml.presentation",
+                use_container_width=True
+            )
 
     st.divider()
 
@@ -561,14 +721,8 @@ Dataset profile:
     section_header("Data Preview")
     n_rows = st.slider("Rows to preview", 5, min(500, df.shape[0]), 50, step=5)
     preview_html = df.head(n_rows).to_html(index=False)
-    st.markdown(
-        f'<div class="dataframe-container">{preview_html}</div>',
-        unsafe_allow_html=True
-    )
-    st.caption(
-        f"Showing {n_rows} of {df.shape[0]:,} rows × {df.shape[1]} columns"
-        f" — scroll right to see all columns"
-    )
+    st.markdown(f'<div class="dataframe-container">{preview_html}</div>', unsafe_allow_html=True)
+    st.caption(f"Showing {n_rows} of {df.shape[0]:,} rows × {df.shape[1]} columns — scroll right to see all columns")
 
     # ── Numeric Column Statistics ──────────────────────────────────────────────
     section_header("Numeric Column Statistics")
@@ -577,14 +731,8 @@ Dataset profile:
         desc["median"] = numeric_df.median()
         desc["mode"]   = numeric_df.mode().iloc[0]
         desc["skew"]   = numeric_df.skew()
-        desc = desc[[
-            "count","mean","median","mode",
-            "std","min","25%","75%","max","skew"
-        ]]
-        desc.columns = [
-            "Count","Mean","Median","Mode",
-            "Std Dev","Min","25%","75%","Max","Skew"
-        ]
+        desc = desc[["count","mean","median","mode","std","min","25%","75%","max","skew"]]
+        desc.columns   = ["Count","Mean","Median","Mode","Std Dev","Min","25%","75%","Max","Skew"]
         st.dataframe(desc.style.format("{:.2f}"), use_container_width=True)
     else:
         st.info("No numeric columns found.")
@@ -599,7 +747,6 @@ Dataset profile:
         st.markdown("##### 📊 Distributions")
         cols_per_row = 2
         rows_needed  = -(-len(numeric_cols) // cols_per_row)
-
         for row in range(rows_needed):
             grid = st.columns(cols_per_row)
             for col_idx in range(cols_per_row):
@@ -608,25 +755,16 @@ Dataset profile:
                     break
                 col_name = numeric_cols[idx]
                 with grid[col_idx]:
-                    fig = px.histogram(
-                        filtered_df, x=col_name, title=col_name,
-                        color_discrete_sequence=[BLUE], nbins=30
-                    )
-                    fig.update_layout(
-                        bargap=0.15, height=280,
-                        margin=dict(l=10,r=10,t=40,b=20),
-                        showlegend=False
-                    )
-                    fig.add_vline(
-                        x=float(filtered_df[col_name].median()),
+                    fig = px.histogram(filtered_df, x=col_name, title=col_name,
+                        color_discrete_sequence=[BLUE], nbins=30)
+                    fig.update_layout(bargap=0.15, height=280,
+                        margin=dict(l=10,r=10,t=40,b=20), showlegend=False)
+                    fig.add_vline(x=float(filtered_df[col_name].median()),
                         line_dash="dash", line_color="#1a4a7a",
-                        annotation_text="Median",
-                        annotation_position="top right"
-                    )
+                        annotation_text="Median", annotation_position="top right")
                     st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-
         st.markdown("##### 📦 Box Plots")
         for row in range(rows_needed):
             grid = st.columns(cols_per_row)
@@ -636,23 +774,18 @@ Dataset profile:
                     break
                 col_name = numeric_cols[idx]
                 with grid[col_idx]:
-                    fig = px.box(
-                        filtered_df, y=col_name, title=col_name,
-                        color_discrete_sequence=[BLUE], points="outliers"
-                    )
+                    fig = px.box(filtered_df, y=col_name, title=col_name,
+                        color_discrete_sequence=[BLUE], points="outliers")
                     fig.update_layout(height=280, margin=dict(l=10,r=10,t=40,b=20))
                     st.plotly_chart(fig, use_container_width=True)
 
         st.divider()
-
         if len(numeric_cols) >= 2:
             st.markdown("##### 🔗 Correlations Between Numeric Variables")
             corr = filtered_df[numeric_cols].corr().round(2)
-            fig_corr = px.imshow(
-                corr, text_auto=True,
+            fig_corr = px.imshow(corr, text_auto=True,
                 color_continuous_scale=["#ffffff","#4a90d9","#1a4a7a"],
-                zmin=-1, zmax=1, title="Correlation Matrix"
-            )
+                zmin=-1, zmax=1, title="Correlation Matrix")
             fig_corr.update_layout(height=420, margin=dict(l=10,r=10,t=40,b=20))
             st.plotly_chart(fig_corr, use_container_width=True)
 
@@ -676,46 +809,32 @@ Dataset profile:
 
     # ── Distribution: Categorical Fields ──────────────────────────────────────
     section_header("Distribution: Categorical Fields")
-
     if short_char_cols:
         for col in short_char_cols:
             st.markdown(f"#### `{col}`")
             counts = df[col].value_counts().reset_index()
             counts.columns = [col, "Count"]
-            counts["Percentage %"] = (
-                counts["Count"] / counts["Count"].sum() * 100
-            ).round(2)
+            counts["Percentage %"] = (counts["Count"] / counts["Count"].sum() * 100).round(2)
             all_values  = df[col].dropna().unique().tolist()
             counts_dict = df[col].value_counts().to_dict()
-
             left, right = st.columns([1, 2])
             with left:
                 st.dataframe(counts.head(20), use_container_width=True, hide_index=True)
             with right:
                 plot_data = counts.head(20)
-                fig = px.bar(
-                    plot_data, x="Count", y=col, orientation="h",
-                    title=f"Top values in '{col}'",
-                    color="Count", color_continuous_scale=BLUE_SCALE,
-                    text="Percentage %"
-                )
+                fig = px.bar(plot_data, x="Count", y=col, orientation="h",
+                    title=f"Top values in '{col}'", color="Count",
+                    color_continuous_scale=BLUE_SCALE, text="Percentage %")
                 fig.update_traces(texttemplate="%{text}%", textposition="outside")
-                fig.update_layout(
-                    bargap=0.2, showlegend=False, coloraxis_showscale=False,
-                    yaxis=dict(autorange="reversed"),
-                    margin=dict(l=10,r=50,t=40,b=20),
-                    height=max(320, len(plot_data) * 32)
-                )
+                fig.update_layout(bargap=0.2, showlegend=False, coloraxis_showscale=False,
+                    yaxis=dict(autorange="reversed"), margin=dict(l=10,r=50,t=40,b=20),
+                    height=max(320, len(plot_data) * 32))
                 st.plotly_chart(fig, use_container_width=True)
-
             with st.expander(f"🤖 AI Summary of '{col}' field", expanded=False):
                 if st.button(f"Summarize '{col}' field", key=f"summarize_{col}"):
                     with st.spinner(f"Claude is analyzing '{col}'..."):
                         summary = summarize_categorical_field(col, all_values, counts_dict)
-                    st.markdown(
-                        f'<div class="text-summary-box">{summary}</div>',
-                        unsafe_allow_html=True
-                    )
+                    st.markdown(f'<div class="text-summary-box">{summary}</div>', unsafe_allow_html=True)
             st.divider()
     else:
         st.info("No short categorical columns found.")
@@ -728,51 +847,37 @@ Dataset profile:
             "Claude reads a 30% random sample and returns color-coded sentiment, "
             "themes, issues, and improvement suggestions."
         )
-
         for col in long_char_cols:
             st.markdown(f"#### `{col}`")
             col_data    = df[col].dropna()
             total_size  = len(col_data)
             sample_size = max(10, min(500, int(total_size * 0.30)))
-
             s1, s2, s3, s4, s5 = st.columns(5)
             s1.metric("Total values",  f"{total_size:,}")
             s2.metric("Unique values", f"{col_data.nunique():,}")
             s3.metric("Avg length",    f"{col_data.astype(str).str.len().mean():.0f} chars")
             s4.metric("Max length",    f"{col_data.astype(str).str.len().max():,} chars")
             s5.metric("Sample size",   f"{sample_size} ({round(sample_size/total_size*100)}%)")
-
             with st.expander("👀 Preview sample values", expanded=False):
-                sample_preview = col_data.sample(min(5, total_size), random_state=42).tolist()
-                for idx_s, val in enumerate(sample_preview, 1):
+                for idx_s, val in enumerate(col_data.sample(min(5, total_size), random_state=42).tolist(), 1):
                     st.markdown(f"**Sample {idx_s}:** {str(val)[:500]}")
                     st.divider()
-
             st.markdown(f"""
             <div style="background:#fff8f0; border:1px solid #f0c080;
                         border-radius:10px; padding:16px 20px; margin:10px 0;">
                 <strong>🤖 Sentiment Analysis available for this field</strong><br>
                 <span style="font-size:13px; color:#666;">
                 Claude will analyze a random 30% sample
-                ({sample_size} of {total_size} values) for sentiment,
-                themes, issues, and improvement suggestions.
+                ({sample_size} of {total_size} values).
                 </span>
             </div>
             """, unsafe_allow_html=True)
-
-            if st.button(
-                f"🔍 Analyze Sentiment in '{col}'",
-                key=f"sentiment_{col}",
-                type="primary",
-                use_container_width=True
-            ):
+            if st.button(f"🔍 Analyze Sentiment in '{col}'",
+                key=f"sentiment_{col}", type="primary", use_container_width=True):
                 sample_values = col_data.sample(sample_size, random_state=None).tolist()
                 with st.spinner(f"Claude is analyzing {sample_size} samples from '{col}'..."):
-                    result = analyze_long_text_sentiment(
-                        col, sample_values, sample_size, total_size
-                    )
+                    result = analyze_long_text_sentiment(col, sample_values, sample_size, total_size)
                 render_sentiment_result(result)
-
             st.divider()
 
 # ── Footer ──────────────────────────────────────────────────────────────────────

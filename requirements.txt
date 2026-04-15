@@ -3,3 +3,6 @@ pandas
 plotly
 openpyxl
 anthropic
+reportlab
+python-pptx
+kaleido
